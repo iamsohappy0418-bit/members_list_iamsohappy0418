@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>제품 주문 이미지 업로드</title>
+    <style>
+        body { font-family: sans-serif; margin: 2rem; }
+        label { display: block; margin: 1rem 0 0.5rem; }
+        input, button { padding: 0.5rem; font-size: 1rem; }
+    </style>
+</head>
+<body>
+    <h2>📦 제품 주문 등록</h2>
+    <form id="uploadForm" enctype="multipart/form-data">
+        <label for="memberName">회원명:</label>
+        <input type="text" id="memberName" name="회원명" required>
+
+        <label for="image">주문 이미지 (스크린샷):</label>
+        <input type="file" id="image" name="image" accept="image/*" required>
+
+        <br><br>
+        <button type="submit">주문 등록</button>
+    </form>
+
+    <div id="response" style="margin-top: 2rem;"></div>
+
+    <script>
+        document.getElementById('uploadForm').addEventListener('submit', async function (e) {
+            e.preventDefault();
+
+            const formData = new FormData(this);
+            const response = await fetch('/upload_order_image', {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await response.json();
+            document.getElementById('response').innerText = JSON.stringify(result, null, 2);
+        });
+    </script>
+</body>
+</html>

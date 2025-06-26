@@ -6,13 +6,14 @@ import gspread
 import pytz
 import uuid
 import openai
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from google.oauth2.service_account import Credentials
 from dotenv import load_dotenv
 from gspread.utils import rowcol_to_a1
 from datetime import datetime
 from collections import Counter
 from oauth2client.service_account import ServiceAccountCredentials
+ 
 
 
 
@@ -918,6 +919,11 @@ def search_memo_by_tags():
 
 
 
+
+
+@app.route("/order_upload_form")
+def order_upload_form():
+    return render_template("upload_order_form.html")
 
 
 
