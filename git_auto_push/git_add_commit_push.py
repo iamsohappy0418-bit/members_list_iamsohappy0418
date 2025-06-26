@@ -91,7 +91,9 @@ def main():
     # ✅ 원격 설정 및 푸시
     subprocess.run(["git", "remote", "remove", "origin"], shell=True)
     subprocess.run(["git", "remote", "add", "origin", user["remote"]], shell=True)
-    subprocess.run(["git", "push", "-u", "origin", "main"], shell=True)
+    subprocess.run(["git", "remote", "set-url", "origin", user["remote"]], shell=True)    
+    
+    subprocess.run(["git", "push", "-u", "origin", "main", "--force"], shell=True, env=push_env)
 
 
     # ✅ 원격 브랜치 pull
