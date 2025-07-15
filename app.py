@@ -1577,10 +1577,39 @@ def parse_and_save_order():
 
 
 
+@app.route("/smart_save", methods=["POST"])
+def smart_save():
+    try:
+        text = request.json.get("text", "").strip()
 
+        if not text:
+            return jsonify({"status": "error", "message": "입력 문장이 없습니다."}), 400
 
+        # 1. 상담/메모/일지 저장 분기
+        if any(x in text for x in ["상담일지 저장", "개인메모 기록", "활동일지 입력"]):
+            return add_counseling()
 
-# 변경내용 있음
+        # 2. 제품주문 키워드 단독 포함 시
+        if "제품주문" in text:
+            parsed = parse_order_text(text)
+            save_order_to_sheet(parsed)
+            return jsonify({
+                "status": "success",
+                "message": f"{parsed['회원명']}님의 제품주문이 저장되었습니다.",
+                "parsed": parsed
+            })
+
+        # 3. 어떤 키워드도 명확하지 않음 → 안내
+        return jsonify({
+            "status": "error",
+            "message": "❗문장에 '제품주문' 또는 '상담일지 저장' 같은 명확한 동작어가 포함되어야 합니다.\n예시: '강소희 상담일지 저장: 제품주문 헤모힘 1세트 328000원 164000pv 카드결제, 소비자 홍길동(010-2222-3333), 센터'"
+        }), 400
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 
 
 
