@@ -10,7 +10,10 @@ from .parser import (
     parse_order_text_rule,
     guess_intent,
     parse_natural_query,
-    parse_deletion_request,   # ✅ 추가
+    parse_deletion_request,
+    parse_request_line,   # ✅ 추가
+    match_condition,      # ✅ 추가
+    remove_josa,          # ✅ 추가
 )
 
 __all__ = [
@@ -25,5 +28,8 @@ __all__ = [
     "parse_order_text_rule",
     "guess_intent",
     "parse_natural_query",
-    "parse_deletion_request",  # ✅ 추가
+    "parse_deletion_request",
+    "parse_request_line",   # ✅ 추가
+    "match_condition",      # ✅ 추가
+    "remove_josa",          # ✅ 추가
 ]

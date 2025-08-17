@@ -17,15 +17,29 @@ from typing import Tuple, Optional
 # ✅ 네임스페이스 없이 바로 호출 가능
 
 from parser import (
-    now_kst,
-    process_order_date,
-    parse_registration,
-    parse_request_and_update,
-    parse_order_text_rule,
+    # 기본 intent 관련
     guess_intent,
     parse_natural_query,
     parse_deletion_request,
+    # 날짜/시간 처리
+    now_kst,
+    process_order_date,
+    # 문자열/공통 유틸
+    clean_tail_command,
+    parse_korean_phone,
+    parse_member_number,
+    remove_josa,
+    match_condition,
+    # 회원 등록/수정
+    parse_registration,
+    infer_field_from_value,
+    parse_request_and_update,
+    # 주문 처리
+    parse_order_text_rule,
+    # 메모/검색용
+    parse_request_line,
 )
+
 
 
 # -------------------- 환경 --------------------
