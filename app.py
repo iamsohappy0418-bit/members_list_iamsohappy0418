@@ -75,7 +75,7 @@ def safe_update_cell(sheet, row: int, col: int, value, clear_first=True, max_ret
     return False
 
 
-def header_maps(sheet):
+def header_maps(sheet): 
     headers = [h.strip() for h in sheet.row_values(1)]
     idx = {h: i + 1 for i, h in enumerate(headers)}
     idx_l = {h.lower(): i + 1 for i, h in enumerate(headers)}
@@ -499,6 +499,7 @@ def delete_order_confirm():
 
 
 
+# 정상작동
 
 
 
