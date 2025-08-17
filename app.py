@@ -80,12 +80,13 @@ if not os.path.exists(CREDS_PATH):
 
 
 # 환경변수 가져오기
-cred_file = os.getenv("GOOGLE_SHEET_CREDENTIALS")
+cred_file = os.getenv("GOOGLE_CREDENTIALS_PATH", "credentials.json")
 sheet_name = os.getenv("GOOGLE_SHEET_NAME")
 
 # gspread 연결
 gc = gspread.service_account(filename=cred_file)
 sh = gc.open(sheet_name)   # 시트 전체 파일 핸들
+
 
 
 # 외부 API (임팩트/멤버리스트/OpenAI) 외부 API로 주문 데이터를 전달
