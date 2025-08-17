@@ -1,4 +1,30 @@
 # parser.py
+def parse_natural_query(text: str):
+    return {"query": text}
+
+def parse_deletion_request(text: str):
+    return {"삭제대상": text}
+
+def guess_intent(text: str) -> str:
+    """자연어 문장에서 intent 추측"""
+    if "주문" in text and "저장" in text:
+        return "save_order"
+    if "주문" in text and any(k in text for k in ["조회", "찾아", "검색"]):
+        return "find_order"
+    if "후원수당" in text and any(k in text for k in ["조회", "알려줘", "검색"]):
+        return "find_commission"
+    if any(k in text for k in ["상담일지", "개인일지", "활동일지"]):
+        return "save_memo"
+    if any(k in text for k in ["삭제", "지워", "제거"]):
+        return "delete_member"
+    if any(k in text for k in ["수정", "변경", "업데이트"]):
+        return "update_member"
+    if any(k in text for k in ["등록", "추가"]):
+        return "register_member"
+    if any(k in text for k in ["조회", "찾기", "검색"]):
+        return "find_member"
+    return "unknown"
+
 # =============================================================================
 # 순수 파싱/유틸 모듈 (외부 I/O 없음)
 # - 날짜/시간 처리
@@ -45,11 +71,7 @@ def process_order_date(raw: str | None) -> str:
 
 
 
-def parse_natural_query(text: str):
-    return {"query": text}
 
-def parse_deletion_request(text: str):
-    return {"삭제대상": text}
 
 
 
@@ -77,28 +99,6 @@ def parse_member_number(text: str) -> str | None:
     m = re.search(r"\b\d{6,8}\b", text)
     return m.group() if m else None
 
-
-# parser/parser.py
-
-def guess_intent(text: str) -> str:
-    """자연어 문장에서 intent 추측"""
-    if "주문" in text and "저장" in text:
-        return "save_order"
-    if "주문" in text and any(k in text for k in ["조회", "찾아", "검색"]):
-        return "find_order"
-    if "후원수당" in text and any(k in text for k in ["조회", "알려줘", "검색"]):
-        return "find_commission"
-    if any(k in text for k in ["상담일지", "개인일지", "활동일지"]):
-        return "save_memo"
-    if any(k in text for k in ["삭제", "지워", "제거"]):
-        return "delete_member"
-    if any(k in text for k in ["수정", "변경", "업데이트"]):
-        return "update_member"
-    if any(k in text for k in ["등록", "추가"]):
-        return "register_member"
-    if any(k in text for k in ["조회", "찾기", "검색"]):
-        return "find_member"
-    return "unknown"
 
 
 
@@ -282,4 +282,52 @@ def parse_deletion_request(text: str) -> dict:
 
     return result
 
+
+# --- 메모/검색용 자연어 유틸 ---------------------------------------------------
+def parse_request_line(text: str):
+    """'회원명 시트키워드 액션 내용...' 형태 한 줄 파서"""
+    if not text or not text.strip():
+        return None, None, None, None
+    s = text.strip()
+    m = re.match(
+        r"^\s*(\S+)\s*(상담\s*일지|개인\s*메모|활동\s*일지|회원\s*메모|회원\s*주소|상담일지|개인메모|활동일지|회원메모|회원주소)\s*(저장|기록|입력)\s*(.*)$",
+        s,
+    )
+    if m:
+        member, sheet_raw, action, content = m.groups()
+        sheet = sheet_raw.replace(" ", "")
+        return member, sheet, action, content
+    parts = s.split(maxsplit=3)
+    if len(parts) < 3:
+        return None, None, None, None
+    member, sheet, action = parts[0], parts[1].replace(" ", ""), parts[2]
+    content = parts[3] if len(parts) > 3 else ""
+    return member, sheet, action, content
+
+def match_condition(text: str, keywords, mode: str):
+    if not keywords:
+        return True
+    t = (text or "").lower()
+    kws = [k.lower() for k in keywords]
+    return all(k in t for k in kws) if mode == "all" else any(k in t for k in kws)
+
+def remove_josa(text: str) -> str:
+    return re.sub(r"(으로|로|은|는|이|가|을|를)$", "", (text or "").strip())
+
+def parse_natural_query(user_input: str):
+    """자연어에서 (필드, 키워드) 추출: 계보도/소개한분/코드/분류/리더님/회원번호 등"""
+    s = (user_input or "").strip()
+    # '계보도 ... X우측/좌측'
+    m = re.search(r"계보도.*?([가-힣]+)\s*(우측|좌측)", s) or re.search(r"계보도.*?([가-힣]+)(우측|좌측)", s)
+    if m:
+        return "계보도", f"{m.group(1)}{m.group(2)}"
+    # 기타 단일 필드
+    mapping = {"계보도":"계보도","소개한분":"소개한분","코드":"코드","분류":"분류","리더님":"리더님","회원번호":"회원번호"}
+    for field in mapping:
+        if field in s:
+            mm = re.search(rf"{field}\s*(?:은|는|이|가|을|를|이란|이라는|에|으로|로)?\s*(.*)", s)
+            if mm:
+                kw = re.split(r"[,\s\n.]", mm.group(1).strip())[0]
+                return field, kw
+    return None, None
 

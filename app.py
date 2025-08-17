@@ -210,7 +210,9 @@ def parse_intent():
 
 
 
-# --- 회원 찾기 ---------------------------------------------------------------
+# ======================================================================================
+# 회원 조회
+# ======================================================================================
 @app.route("/find_member", methods=["POST"])
 def find_member():
     try:
@@ -241,7 +243,12 @@ def find_member():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-# --- 회원 저장/수정 -----------------------------------------------------------
+
+
+
+# ======================================================================================
+# 회원 등록(이름/번호/폰/주소 일부 파싱) + 없으면 생성 / 있으면 갱신
+# ======================================================================================
 @app.route("/save_member", methods=["POST"])
 def save_member_route():
     try:
@@ -280,102 +287,435 @@ def save_member_route():
         traceback.print_exc()
         return jsonify({"ok": False, "error": str(e)}), 500
 
+
+
+
+
+
+# ======================================================================================
+# 회원 필드 다중 수정 (자연어)
+# ======================================================================================
 @app.route("/update_member", methods=["POST"])
 @app.route("/updateMember", methods=["POST"])
 def update_member_route():
     try:
         data = request.get_json(force=True)
-        요청문 = (data.get("요청문") or "").strip()
+        요청문 = clean_tail_command((data.get("요청문") or "").strip())
         if not 요청문:
-            return jsonify({"ok": False, "error": "요청문이 비어 있습니다."}), 400
+            return jsonify({"error": "요청문이 비어 있습니다."}), 400
 
-        ws = get_ws("DB")
-        headers, idx, idx_l = header_maps(ws)
-        records = ws.get_all_records()
+        sheet = get_worksheet("DB")
+        headers, idx, idx_l = get_header_index_maps(sheet)
+        records = sheet.get_all_records()
+
         if not records:
             return jsonify({"error": "DB 시트에 레코드가 없습니다."}), 404
 
-        # 회원명 매칭(길이 긴 이름 우선)
+        # 회원명 후보(길이가 긴 것 우선)
         member_names = sorted({(r.get("회원명") or "").strip() for r in records if r.get("회원명")}, key=lambda s: -len(s))
         name = None
         for cand in member_names:
-            if not cand: continue
+            if not cand:
+                continue
             if re.search(rf"\b{re.escape(cand)}\b", 요청문):
-                name = cand; break
+                name = cand
+                break
         if not name:
             return jsonify({"error": "요청문에서 유효한 회원명을 찾을 수 없습니다."}), 400
 
-        # 대상 행 로드
-        i = next((i for i, r in enumerate(records) if (r.get("회원명") or "").strip() == name), None)
-        if i is None:
+        # 대상 행
+        target_idx = next((i for i, r in enumerate(records) if (r.get("회원명") or "").strip() == name), None)
+        if target_idx is None:
             return jsonify({"error": f"'{name}' 회원을 찾을 수 없습니다."}), 404
-        row_idx = i + 2
-        member = records[i]
+        row_idx = target_idx + 2
+        member = records[target_idx]
 
+        # 파싱 및 적용
         updated_member, changed = parse_request_and_update(요청문, member)
+
         results = []
         for k, v in changed.items():
             col = idx.get(k) or idx_l.get(k.lower())
-            if not col: continue
-            if safe_update_cell(ws, row_idx, col, v, clear_first=True):
+            if not col:
+                continue
+            ok = safe_update_cell(sheet, row_idx, col, v, clear_first=True)
+            if ok:
                 results.append({"필드": k, "값": v})
+
         return jsonify({"status": "success", "회원명": name, "수정": results}), 200
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
-# --- 주문: 이미지 업로드 → OpenAI 파싱 → 저장 + 임팩트 연동 -------------------------
-def save_orders_to_sheet(member_name: str, orders_list: list[dict]) -> int:
-    db_ws = get_ws("DB")
-    recs = db_ws.get_all_records()
-    info = next((r for r in recs if (r.get("회원명") or "").strip() == member_name), None)
-    if not info:
-        raise RuntimeError(f"회원 '{member_name}'을(를) 찾을 수 없습니다.")
-    ws = get_ws("제품주문")
+# ======================================================================================
+# 회원 삭제 (백업 후 삭제)
+# ======================================================================================
+def ensure_backup_sheet():
+    try:
+        return get_worksheet("백업")
+    except WorksheetNotFound:
+        return spreadsheet.add_worksheet(title="백업", rows=1000, cols=3)
+
+@app.route("/delete_member", methods=["POST"])
+def delete_member_route():
+    try:
+        name = (request.get_json(force=True).get("회원명") or "").strip()
+        if not name:
+            return jsonify({"error": "회원명을 입력해야 합니다."}), 400
+
+        db = get_worksheet("DB")
+        headers, idx, _ = get_header_index_maps(db)
+        records = db.get_all_records()
+        if not records:
+            return jsonify({"error": "DB 시트에 레코드가 없습니다."}), 404
+
+        for i, row in enumerate(records):
+            if (row.get("회원명") or "").strip() == name:
+                # 백업
+                b = ensure_backup_sheet()
+                b.insert_row([now_kst().strftime("%Y-%m-%d %H:%M"), name, json.dumps(row, ensure_ascii=False)], index=2)
+                # 삭제
+                db.delete_rows(i + 2)
+                return jsonify({"message": f"'{name}' 회원 삭제 및 백업 완료"}), 200
+        return jsonify({"error": f"'{name}' 회원을 찾을 수 없습니다."}), 404
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+# ======================================================================================
+# 메모 통합 저장 / 검색
+# ======================================================================================
+SHEET_KEYS = {"상담일지", "개인메모", "활동일지", "회원메모", "회원주소"}
+ACTION_KEYS = {"저장", "기록", "입력"}
+
+def save_to_sheet(sheet_name: str, member_name: str, content: str) -> bool:
+    ws = get_worksheet(sheet_name)
+    ws.insert_row([now_kst().strftime("%Y-%m-%d %H:%M"), member_name.strip(), (content or "").strip()], index=2)
+    return True
+
+def update_member_field_strict(member_name: str, field_name: str, value: str) -> bool:
+    ws = get_worksheet("DB")
+    headers, idx, idx_l = get_header_index_maps(ws)
+    if "회원명" not in headers or (idx.get(field_name) is None and idx_l.get(field_name.lower()) is None):
+        raise RuntimeError("DB 시트 헤더에 필드가 없습니다.")
     values = ws.get_all_values()
-    if not values:
-        ws.append_row(["주문일자","회원명","회원번호","휴대폰번호","제품명","제품가격","PV","결재방법","주문자_고객명","주문자_휴대폰번호","배송처","수령확인"])
-    saved = 0
-    for od in orders_list:
-        row = [
-            od.get("주문일자", now_kst().strftime("%Y-%m-%d")),
-            member_name,
-            info.get("회원번호", ""),
-            info.get("휴대폰번호", ""),
-            od.get("제품명", ""),
-            od.get("제품가격", ""),
-            od.get("PV", ""),
-            od.get("결재방법", ""),
-            od.get("주문자_고객명", ""),
-            od.get("주문자_휴대폰번호", ""),
-            od.get("배송처", ""),
-            od.get("수령확인", ""),
+    mcol = headers.index("회원명") + 1
+    fcol = idx.get(field_name) or idx_l.get(field_name.lower())
+    target_row = None
+    for i, row in enumerate(values[1:], start=2):
+        if len(row) >= mcol and row[mcol - 1] == member_name:
+            target_row = i
+            break
+    if target_row is None:
+        return False
+    return bool(safe_update_cell(ws, target_row, fcol, value, clear_first=True))
+
+@app.route("/save_note_unified", methods=["POST"])
+def save_note_unified():
+    try:
+        data = request.get_json(force=True)
+        raw = data.get("요청문", "")
+        member, sheet_key, action, content = parse_request_line(raw)
+        if not member:
+            return jsonify({"ok": False, "message": "형식 오류: 첫 단어에 회원명을 입력하세요."}), 400
+        if sheet_key not in SHEET_KEYS:
+            return jsonify({"ok": False, "message": "형식 오류: 두 번째 단어가 유효한 시트키워드가 아닙니다.", "허용": sorted(SHEET_KEYS)}), 400
+        if action not in ACTION_KEYS:
+            return jsonify({"ok": False, "message": "형식 오류: 세 번째 단어에 '저장/기록/입력' 중 하나를 입력하세요.", "허용": sorted(ACTION_KEYS)}), 400
+
+        if sheet_key in {"상담일지", "개인메모", "활동일지"}:
+            save_to_sheet(sheet_key, member, content)
+            return jsonify({"ok": True, "message": f"{member}님의 {sheet_key} 저장 완료."}), 200
+        if sheet_key == "회원메모":
+            ok = update_member_field_strict(member, "메모", content)
+            return (jsonify({"ok": True, "message": f"{member}님의 메모가 DB에 저장되었습니다."}), 200) if ok else (jsonify({"ok": False, "message": f"'{member}' 회원을 찾을 수 없습니다."}), 404)
+        if sheet_key == "회원주소":
+            ok = update_member_field_strict(member, "주소", content)
+            return (jsonify({"ok": True, "message": f"{member}님의 주소가 DB에 저장되었습니다."}), 200) if ok else (jsonify({"ok": False, "message": f"'{member}' 회원을 찾을 수 없습니다."}), 404)
+        return jsonify({"ok": False, "message": f"처리할 수 없는 시트키워드: {sheet_key}"}), 400
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+@app.route("/search_memo_by_text", methods=["POST"])
+def search_memo_by_text():
+    try:
+        data = request.get_json(force=True)
+        keywords = data.get("keywords", [])
+        limit = int(data.get("limit", 20))
+        sort_order = data.get("sort", "desc")
+        match_mode = data.get("match_mode", "any")
+
+        ws = get_worksheet("개인메모")
+        rows = ws.get_all_values()[1:]
+        res = []
+        for r in rows:
+            if len(r) < 3: continue
+            date_str, member, content = r[0], r[1], r[2]
+            combined = f"{member} {content}"
+            if not match_condition(combined, keywords, match_mode):
+                continue
+            try:
+                dt = datetime.strptime(date_str, "%Y-%m-%d %H:%M")
+            except ValueError:
+                continue
+            res.append({"날짜": date_str, "회원명": member, "내용": content, "_dt": dt})
+        res.sort(key=lambda x: x["_dt"], reverse=(sort_order == "desc"))
+        for r in res: r.pop("_dt", None)
+        return jsonify({"검색조건": {"검색어": keywords, "매칭방식": match_mode, "정렬": sort_order, "결과_최대개수": limit},
+                        "검색결과": res[:limit]}), 200
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/search_counseling_by_text_from_natural", methods=["POST"])
+def search_counseling_by_text_from_natural():
+    try:
+        data = request.get_json(force=True)
+        keywords = data.get("keywords", [])
+        limit = int(data.get("limit", 20))
+        sort_order = data.get("sort", "desc")
+        match_mode = data.get("match_mode", "any")
+
+        ws = get_worksheet("상담일지")
+        rows = ws.get_all_values()[1:]
+        res = []
+        for r in rows:
+            if len(r) < 3: continue
+            date_str, member, content = r[0], r[1], r[2]
+            comb = f"{member} {content}".lower()
+            cond = (all(k.lower() in comb for k in keywords) if match_mode == "all"
+                    else any(k.lower() in comb for k in keywords))
+            if not cond: continue
+            try:
+                dt = datetime.strptime(date_str, "%Y-%m-%d %H:%M")
+            except ValueError:
+                continue
+            res.append({"날짜": date_str, "회원명": member, "내용": content, "_dt": dt})
+        res.sort(key=lambda x: x["_dt"], reverse=(sort_order == "desc"))
+        for r in res: r.pop("_dt", None)
+        return jsonify({"검색조건": {"키워드": keywords, "매칭방식": match_mode, "정렬": sort_order},
+                        "검색결과": res[:limit]}), 200
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/search_activity_by_text_from_natural", methods=["POST"])
+def search_activity_by_text_from_natural():
+    try:
+        data = request.get_json(force=True)
+        keywords = data.get("keywords", [])
+        limit = int(data.get("limit", 20))
+        sort_order = data.get("sort", "desc")
+        match_mode = data.get("match_mode", "any")
+
+        ws = get_worksheet("활동일지")
+        rows = ws.get_all_values()[1:]
+        res = []
+        for r in rows:
+            if len(r) < 3: continue
+            date_str, member, content = r[0], r[1], r[2]
+            comb = f"{member} {content}".lower()
+            cond = (all(k.lower() in comb for k in keywords) if match_mode == "all"
+                    else any(k.lower() in comb for k in keywords))
+            if not cond: continue
+            try:
+                dt = datetime.strptime(date_str, "%Y-%m-%d %H:%M")
+            except ValueError:
+                continue
+            res.append({"날짜": date_str, "회원명": member, "내용": content, "_dt": dt})
+        res.sort(key=lambda x: x["_dt"], reverse=(sort_order == "desc"))
+        for r in res: r.pop("_dt", None)
+        return jsonify({"검색조건": {"키워드": keywords, "매칭방식": match_mode, "정렬": sort_order},
+                        "검색결과": res[:limit]}), 200
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/search_all_memo_by_text_from_natural", methods=["POST"])
+def search_all_memo_by_text_from_natural():
+    try:
+        data = request.get_json(silent=True) or {}
+        raw = data.get("text") or " ".join(data.get("keywords", []))
+        if not (raw or "").strip():
+            return jsonify({"error": "검색어가 없습니다."}), 400
+        words = raw.split()
+        has_all = "동시" in words
+        keywords = [w for w in words if w != "동시"]
+
+        payload = {"keywords": keywords, "limit": 20, "sort": "desc", "match_mode": "all" if has_all else "any"}
+        with app.test_client() as c:
+            a = c.post("/search_memo_by_text", json=payload)
+            b = c.post("/search_activity_by_text_from_natural", json=payload)
+            d = c.post("/search_counseling_by_text_from_natural", json=payload)
+
+        def ext(resp):
+            try:
+                j = resp.get_json()
+                return j.get("검색결과", [])
+            except Exception:
+                return []
+
+        lines = []
+        for label, resp in [("개인메모", a), ("활동일지", b), ("상담일지", d)]:
+            lines.append(f"=== {label} ===")
+            for r in ext(resp):
+                lines.append(f"{r['날짜']} {r['회원명']} {r['내용']}")
+            lines.append("")
+        return Response("\n".join(lines), mimetype="text/plain; charset=utf-8")
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+# ======================================================================================
+# 자연어 회원 검색(간단 키워드 매핑)
+# ======================================================================================
+@app.route("/members/search-nl", methods=["POST"])
+def search_by_natural_language():
+    try:
+        data = request.get_json(force=True)
+        query = data.get("query")
+        if not query:
+            return Response("query 파라미터가 필요합니다.", status=400)
+
+        field, keyword = parse_natural_query(query)
+        if not field or not keyword:
+            return Response("자연어에서 검색 필드와 키워드를 찾을 수 없습니다.", status=400)
+
+        ws = get_worksheet("DB")
+        records = ws.get_all_records()
+        if not records:
+            return Response("레코드가 없습니다.", status=404)
+
+        fk = field.strip()
+        kw = str(keyword).strip().lower().replace(" ", "")
+        filtered = [m for m in records if kw == str(m.get(fk, "")).strip().lower().replace(" ", "")]
+        filtered.sort(key=lambda m: m.get("회원명", ""))
+        if not filtered:
+            return Response("조건에 맞는 회원이 없습니다.", status=200)
+
+        lines = [
+            f"{m.get('회원명','')} (회원번호: {m.get('회원번호','')}"
+            + (f", 비밀번호: {m.get('비밀번호','')}" if m.get("비밀번호") else "")
+            + (f", 연락처: {m.get('휴대폰번호','')}" if m.get('휴대폰번호') else "")
+            + (f", {remove_josa(str(m.get('코드','')).strip())}" if m.get('코드') else "")
+            + ")"
+            for m in filtered[:40]
         ]
-        ws.insert_row(row, index=2)
-        saved += 1
-    return saved
+        if len(filtered) > 40:
+            lines.append("--- 다음 있음 ---")
+        return Response("\n".join(lines), mimetype="text/plain")
+    except Exception as e:
+        traceback.print_exc()
+        return Response(f"[서버 오류] {str(e)}", status=500)
+
+# ======================================================================================
+# 주문 처리 (이미지/텍스트 → JSON → memberslist API 또는 시트 저장)
+# ======================================================================================
+def call_memberslist_add_orders(payload: dict):
+    resp = requests.post(MEMBERSLIST_API_URL, json=payload, timeout=30)
+    resp.raise_for_status()
+    return resp.json()
+
+def extract_order_from_uploaded_image(image_bytes: io.BytesIO):
+    image_base64 = base64.b64encode(image_bytes.getvalue()).decode("utf-8")
+    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
+    prompt = (
+        "이미지를 분석하여 JSON 형식으로 추출하세요. "
+        "여러 개의 제품이 있을 경우 'orders' 배열에 모두 담으세요. "
+        "질문하지 말고 추출된 orders 전체를 그대로 저장할 준비를 하세요. "
+        "(이름, 휴대폰번호, 주소)는 소비자 정보임. "
+        "회원명, 결재방법, 수령확인, 주문일자 무시. "
+        "필드: 제품명, 제품가격, PV, 주문자_고객명, 주문자_휴대폰번호, 배송처"
+    )
+    payload = {
+        "model": "gpt-4o",
+        "messages": [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}}
+            ]
+        }],
+        "temperature": 0
+    }
+    r = requests.post(OPENAI_API_URL, headers=headers, json=payload, timeout=60)
+    r.raise_for_status()
+    result_text = r.json()["choices"][0]["message"]["content"]
+    clean_text = re.sub(r"```(?:json)?", "", result_text, flags=re.MULTILINE).strip()
+    try:
+        data = json.loads(clean_text)
+        return data
+    except json.JSONDecodeError:
+        return {"raw_text": result_text}
+
+def _handle_image_order_upload(mode: str, member_name: str, image_bytes: io.BytesIO):
+    # GPT Vision
+    parsed = extract_order_from_uploaded_image(image_bytes)
+    orders_list = ensure_orders_list(parsed)
+    if not orders_list:
+        return jsonify({"error": "GPT 응답이 올바른 JSON 형식이 아닙니다.", "응답": parsed}), 500
+
+    # 공란 정책 반영
+    for o in orders_list:
+        o.setdefault("결재방법", "")
+        o.setdefault("수령확인", "")
+        # 날짜는 비워두면 downstream에서 처리
+
+    if mode == "api":
+        saved = call_memberslist_add_orders({"회원명": member_name, "orders": orders_list})
+        return jsonify({"mode": "api", "message": f"{member_name}님의 주문이 저장되었습니다. (memberslist API)", "추출된_JSON": orders_list, "저장_결과": saved}), 200
+
+    if mode == "sheet":
+        db_ws = get_worksheet("DB")
+        recs = db_ws.get_all_records()
+        member_info = next((r for r in recs if (r.get("회원명") or "").strip() == member_name), None)
+        if not member_info:
+            return jsonify({"error": f"회원 '{member_name}'을(를) 찾을 수 없습니다."}), 404
+
+        orders_ws = get_worksheet("제품주문")
+        # 헤더 보장
+        values = orders_ws.get_all_values()
+        if not values:
+            orders_ws.append_row(["주문일자","회원명","회원번호","휴대폰번호","제품명","제품가격","PV","결재방법","주문자_고객명","주문자_휴대폰번호","배송처","수령확인"])
+
+        saved_rows = 0
+        for od in orders_list:
+            row = [
+                od.get("주문일자", now_kst().strftime("%Y-%m-%d")),
+                member_name,
+                member_info.get("회원번호", ""),
+                member_info.get("휴대폰번호", ""),
+                od.get("제품명", ""),
+                od.get("제품가격", ""),
+                od.get("PV", ""),
+                od.get("결재방법", ""),
+                od.get("주문자_고객명", ""),
+                od.get("주문자_휴대폰번호", ""),
+                od.get("배송처", ""),
+                od.get("수령확인", ""),
+            ]
+            orders_ws.insert_row(row, index=2)
+            saved_rows += 1
+        return jsonify({"mode": "sheet", "status": "success", "saved_rows": saved_rows}), 200
+
+    return jsonify({"error": "mode 값은 'api' 또는 'sheet'여야 합니다."}), 400
 
 @app.route("/upload_order", methods=["POST"])
-def upload_order():
-    """
-    mode: api(기본, memberslist로 저장) | sheet(시트에 직접 저장)
-    임팩트 연동: 두 모드 모두 성공 시 IMPACT_API_URL 로 payload 전달 (있을 경우)
-    """
+def upload_order_auto():
+    # iPad/모바일/PC를 나눠 처리할 필요 없이 공통 핸들러로 통일
     mode = request.form.get("mode") or request.args.get("mode") or "api"
     member_name = (request.form.get("회원명") or "").strip()
     message_text = (request.form.get("message") or "").strip()
     image_file = request.files.get("image")
     image_url = request.form.get("image_url")
 
-
-
     if (not member_name) and "제품주문 저장" in message_text:
-        member_name = re.sub(r"\s*제품주문\s*저장\s*", "", message_text).strip()
-
-
+        member_name = message_text.replace("제품주문 저장", "").strip()
 
     if not member_name:
         return jsonify({"error": "회원명 필드 또는 message에서 회원명을 추출할 수 없습니다."}), 400
+
     try:
         if image_file:
             image_bytes = io.BytesIO(image_file.read())
@@ -387,84 +727,132 @@ def upload_order():
         else:
             return jsonify({"error": "image(파일) 또는 image_url이 필요합니다."}), 400
 
-        orders_list = openai_vision_extract_orders(image_bytes)
-        if not orders_list:
-            return jsonify({"error": "주문 정보를 추출하지 못했습니다."}), 400
-
-        impact_payload = {"type": "order", "member": member_name, "orders": orders_list, "source": "sheet_gpt"}
-
-        if mode == "api":
-            saved = call_memberslist_add_orders({"회원명": member_name, "orders": orders_list})
-            impact_res = call_impact_sync(impact_payload)
-            return jsonify({"mode": "api", "message": f"{member_name}님의 주문 저장 완료 (memberslist)", "openai_orders": orders_list, "memberslist_result": saved, "impact_result": impact_res}), 200
-
-        if mode == "sheet":
-            saved_rows = save_orders_to_sheet(member_name, orders_list)
-            impact_res = call_impact_sync(impact_payload)
-            return jsonify({"mode": "sheet", "status": "success", "saved_rows": saved_rows, "openai_orders": orders_list, "impact_result": impact_res}), 200
-
-        return jsonify({"ok": False, "data": "mode 값은 'api' 또는 'sheet'여야 합니다."}), 400
+        return _handle_image_order_upload(mode, member_name, image_bytes)
     except Exception as e:
         traceback.print_exc()
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
-# --- 주문: 텍스트 → 규칙 파서 → 한 줄 저장 + 임팩트 연동 ----------------------------
+# 텍스트 → 주문 JSON (OpenAI)
+def parse_order_from_text(text: str):
+    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
+    prompt = f"""
+다음 문장에서 주문 정보를 JSON 형식으로 추출하세요.
+여러 개의 제품이 있을 경우 'orders' 배열에 모두 담으세요.
+질문하지 말고 추출된 orders 전체를 그대로 저장할 준비를 하세요.
+(이름, 휴대폰번호, 주소)는 소비자 정보임.
+회원명, 결재방법, 수령확인, 주문일자 무시.
+필드: 제품명, 제품가격, PV, 결재방법, 주문자_고객명, 주문자_휴대폰번호, 배송처.
+
+입력 문장:
+{text}
+
+JSON 형식:
+{{
+  "orders": [
+    {{
+      "제품명": "...",
+      "제품가격": ...,
+      "PV": ...,
+      "결재방법": "",
+      "주문자_고객명": "...",
+      "주문자_휴대폰번호": "...",
+      "배송처": "..."
+    }}
+  ]
+}}
+"""
+    payload = {"model": "gpt-4o", "messages": [{"role": "user", "content": prompt}], "temperature": 0}
+    r = requests.post(OPENAI_API_URL, headers=headers, json=payload, timeout=60)
+    r.raise_for_status()
+    result_text = r.json()["choices"][0]["message"]["content"]
+    clean_text = re.sub(r"```(?:json)?", "", result_text, flags=re.MULTILINE).strip()
+    try:
+        return json.loads(clean_text)
+    except json.JSONDecodeError:
+        return {"raw_text": result_text}
+
+@app.route("/upload_order_text", methods=["POST"])
+def upload_order_text():
+    text = request.form.get("message") or (request.json.get("message") if request.is_json else None)
+    if not text:
+        return jsonify({"error": "message 필드가 필요합니다."}), 400
+
+    m = re.match(r"^(\S+)\s*제품주문\s*저장", text)
+    if not m:
+        return jsonify({"error": "회원명을 찾을 수 없습니다."}), 400
+    member_name = m.group(1)
+
+    od = parse_order_from_text(text)
+    orders_list = ensure_orders_list(od)
+    if not orders_list:
+        return jsonify({"error": "주문 정보를 추출하지 못했습니다.", "응답": od}), 400
+
+    try:
+        saved = call_memberslist_add_orders({"회원명": member_name, "orders": orders_list})
+        return jsonify({"status": "success", "회원명": member_name, "추출된_JSON": orders_list, "저장_결과": saved}), 200
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+def handle_order_save(one_row: dict):
+    ws = get_worksheet("제품주문")
+    values = ws.get_all_values()
+    if not values:
+        ws.append_row(["주문일자","회원명","회원번호","휴대폰번호","제품명","제품가격","PV","결재방법","주문자_고객명","주문자_휴대폰번호","배송처","수령확인"])
+    row = [
+        process_order_date(one_row.get("주문일자", "")),
+        one_row.get("회원명", ""),
+        one_row.get("회원번호", ""),
+        one_row.get("휴대폰번호", ""),
+        one_row.get("제품명", ""),
+        float(one_row.get("제품가격", 0) or 0),
+        float(one_row.get("PV", 0) or 0),
+        one_row.get("결재방법", ""),
+        one_row.get("주문자_고객명", ""),
+        one_row.get("주문자_휴대폰번호", ""),
+        one_row.get("배송처", ""),
+        one_row.get("수령확인", ""),
+    ]
+    ws.insert_row(row, index=2)
+
 @app.route("/parse_and_save_order", methods=["POST"])
 def parse_and_save_order():
     try:
         user_input = request.json.get("text", "")
         parsed = parse_order_text_rule(user_input)
-        if not parsed.get("회원명"):
-            return jsonify({"status": "error", "message": "회원명을 찾지 못했습니다."}), 400
-        # 시트 한 줄 저장
-        ws = get_ws("제품주문")
-        if not ws.get_all_values():
-            ws.append_row(["주문일자","회원명","회원번호","휴대폰번호","제품명","제품가격","PV","결재방법","주문자_고객명","주문자_휴대폰번호","배송처","수령확인"])
-        row = [
-            process_order_date(parsed.get("주문일자", "")),
-            parsed.get("회원명",""),
-            parsed.get("회원번호",""),
-            parsed.get("휴대폰번호",""),
-            parsed.get("제품명",""),
-            float(parsed.get("제품가격", 0) or 0),
-            float(parsed.get("PV", 0) or 0),
-            parsed.get("결재방법",""),
-            parsed.get("주문자_고객명",""),
-            parsed.get("주문자_휴대폰번호",""),
-            parsed.get("배송처",""),
-            parsed.get("수령확인",""),
-        ]
-        ws.insert_row(row, index=2)
-
-        # 임팩트 연동
-        impact_res = call_impact_sync({"type":"order_line","member":parsed.get("회원명",""),"row":row,"source":"sheet_gpt"})
-        return jsonify({"status":"success","message":f"{parsed.get('회원명','')}님의 주문이 저장되었습니다.","parsed":parsed,"impact_result":impact_res}), 200
+        handle_order_save(parsed)
+        return jsonify({"status": "success", "message": f"{parsed.get('회원명','')}님의 주문이 저장되었습니다.", "parsed": parsed}), 200
     except Exception as e:
         traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# --- 최근 주문 삭제 ------------------------------------------------------------
+# 최근 주문 5건 보여주고 삭제 유도
 @app.route("/delete_order_request", methods=["POST"])
 def delete_order_request():
     try:
-        ws = get_ws("제품주문")
+        ws = get_worksheet("제품주문")
         values = ws.get_all_values()
         if not values or len(values) < 2:
             return jsonify({"message": "등록된 주문이 없습니다."}), 404
         headers = values[0]; rows = values[1:]
+        # 안전 인덱서
         def col(name): return headers.index(name) if name in headers else None
+
         N = min(5, len(rows))
         response = []
         for i, row in enumerate(rows[:N], start=1):
-            response.append({
-                "번호": i,
-                "회원명": row[col("회원명")] if col("회원명") is not None else "",
-                "제품명": row[col("제품명")] if col("제품명") is not None else "",
-                "가격": row[col("제품가격")] if col("제품가격") is not None else "",
-                "PV": row[col("PV")] if col("PV") is not None else "",
-                "주문일자": row[col("주문일자")] if col("주문일자") is not None else "",
-            })
-        return jsonify({"message": f"📌 최근 주문 내역 {len(response)}건입니다. 삭제할 번호(1~{len(response)})를 선택해 주세요.","주문목록": response}), 200
+            try:
+                response.append({
+                    "번호": i,
+                    "회원명": row[col("회원명")] if col("회원명") is not None and len(row) > col("회원명") else "",
+                    "제품명": row[col("제품명")] if col("제품명") is not None and len(row) > col("제품명") else "",
+                    "가격": row[col("제품가격")] if col("제품가격") is not None and len(row) > col("제품가격") else "",
+                    "PV": row[col("PV")] if col("PV") is not None and len(row) > col("PV") else "",
+                    "주문일자": row[col("주문일자")] if col("주문일자") is not None and len(row) > col("주문일자") else "",
+                })
+            except Exception:
+                continue
+        return jsonify({"message": f"📌 최근 주문 내역 {len(response)}건입니다. 삭제할 번호(1~{len(response)})를 선택해 주세요.", "주문목록": response}), 200
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
@@ -478,28 +866,29 @@ def delete_order_confirm():
             return jsonify({"message": "삭제 요청이 취소되었습니다."}), 200
 
         nums = sorted(set(map(int, re.findall(r"\d+", numbers))))
-        ws = get_ws("제품주문")
+        ws = get_worksheet("제품주문")
         values = ws.get_all_values()
         if not values or len(values) < 2:
             return jsonify({"error": "삭제할 주문 데이터가 없습니다."}), 400
+
         N = min(5, len(values) - 1)
         if not nums or any(n < 1 or n > N for n in nums):
             return jsonify({"error": f"삭제할 주문 번호는 1 ~ {N} 사이로 입력해 주세요."}), 400
 
+        # 실제 행 번호(헤더 제외)
         real_rows = [i + 2 for i in range(N)]
         to_delete_rows = sorted([real_rows[n - 1] for n in nums], reverse=True)
         for r in to_delete_rows:
             ws.delete_rows(r)
-        return jsonify({"message": f"{', '.join(map(str, nums))}번 주문이 삭제되었습니다.","삭제행번호": to_delete_rows}), 200
+        return jsonify({"message": f"{', '.join(map(str, nums))}번 주문이 삭제되었습니다.", "삭제행번호": to_delete_rows}), 200
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+# ======================================================================================
+# 헬스체크 & 디버그
+# ======================================================================================
 
-
-
-
-# 정상작동
 
 
 
