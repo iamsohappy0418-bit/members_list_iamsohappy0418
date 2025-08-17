@@ -133,7 +133,7 @@ def infer_field_from_value(v: str) -> str | None:
     if re.search(r"(좌측|우측|라인|왼쪽|오른쪽)", v):
         return "계보도"
     if re.fullmatch(r"[a-zA-Z0-9@!#%^&*]{6,20}", v):
-        return "비밀번호"
+        return "특수번호"
     return None
 
 def parse_request_and_update(nl: str, member: dict) -> tuple[dict, dict]:
@@ -143,7 +143,7 @@ def parse_request_and_update(nl: str, member: dict) -> tuple[dict, dict]:
     """
     changed = {}
     text = (nl or "").strip()
-    keys = ["주소","휴대폰번호","회원번호","비밀번호","가입일자","생년월일","통신사",
+    keys = ["주소","휴대폰번호","회원번호","특수번호","가입일자","생년월일","통신사",
             "친밀도","근무처","계보도","소개한분","메모","코드","리더님","분류","회원단계","연령/성별","직업"]
     positions = []
     for k in keys:
@@ -276,7 +276,7 @@ def parse_deletion_request(text: str) -> dict:
         result["member"] = parts[0]
 
     # 삭제 대상 필드 추출
-    for keyword in ["휴대폰번호", "주소", "카드번호", "비밀번호"]:
+    for keyword in ["휴대폰번호", "주소", "카드번호", "특수번호"]:
         if keyword in text:
             result["fields"].append(keyword)
 
