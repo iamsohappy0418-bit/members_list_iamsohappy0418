@@ -5,25 +5,63 @@ def parse_natural_query(text: str):
 def parse_deletion_request(text: str):
     return {"삭제대상": text}
 
+
 def guess_intent(text: str) -> str:
-    """자연어 문장에서 intent 추측"""
-    if "주문" in text and "저장" in text:
-        return "save_order"
-    if "주문" in text and any(k in text for k in ["조회", "찾아", "검색"]):
-        return "find_order"
-    if "후원수당" in text and any(k in text for k in ["조회", "알려줘", "검색"]):
-        return "find_commission"
-    if any(k in text for k in ["상담일지", "개인일지", "활동일지"]):
-        return "save_memo"
-    if any(k in text for k in ["삭제", "지워", "제거"]):
-        return "delete_member"
+    """
+    자연어 문장에서 intent 추측
+    - 회원 / 주문 / 메모 / 후원수당 카테고리별 구분
+    """
+
+    # =====================
+    # 회원 관련
+    # =====================
+    if any(k in text for k in ["회원등록", "등록", "추가"]):
+        return "register_member"
+
     if any(k in text for k in ["수정", "변경", "업데이트"]):
         return "update_member"
-    if any(k in text for k in ["등록", "추가"]):
-        return "register_member"
-    if any(k in text for k in ["조회", "찾기", "검색"]):
+
+    if any(k in text for k in ["삭제", "지워", "제거"]):
+        return "delete_member"
+
+    if any(k in text for k in ["조회", "찾아", "검색", "알려줘"]):
         return "find_member"
+
+    # =====================
+    # 주문 관련
+    # =====================
+    if "주문" in text and "저장" in text:
+        return "save_order"
+
+    if "주문" in text and any(k in text for k in ["조회", "찾아", "검색"]):
+        return "find_order"
+
+    # =====================
+    # 메모 / 일지 관련
+    # =====================
+    if any(k in text for k in ["상담일지", "개인메모", "활동일지"]):
+        return "save_memo"
+
+    if "메모" in text and any(k in text for k in ["조회", "검색", "찾아"]):
+        return "find_memo"
+
+    # =====================
+    # 후원수당 관련
+    # =====================
+    if "후원수당" in text and any(k in text for k in ["등록", "추가", "저장"]):
+        return "save_commission"
+
+    if "후원수당" in text and any(k in text for k in ["조회", "검색", "알려줘"]):
+        return "find_commission"
+
+    # =====================
+    # 기본값
+    # =====================
     return "unknown"
+
+
+
+
 
 # =============================================================================
 # 순수 파싱/유틸 모듈 (외부 I/O 없음)
@@ -330,4 +368,26 @@ def parse_natural_query(user_input: str):
                 kw = re.split(r"[,\s\n.]", mm.group(1).strip())[0]
                 return field, kw
     return None, None
+
+def ensure_orders_list(parsed):
+    """
+    Vision/GPT 응답(parsed)을 안전하게 '주문 리스트(list of dict)'로 변환.
+    """
+    if not parsed:
+        return []
+    if isinstance(parsed, str):
+        try:
+            parsed = json.loads(parsed)
+        except Exception:
+            return []
+    if isinstance(parsed, dict):
+        if "orders" in parsed and isinstance(parsed["orders"], list):
+            return parsed["orders"]
+        if all(isinstance(v, (str, int, float, type(None))) for v in parsed.values()):
+            return [parsed]
+    if isinstance(parsed, list):
+        return parsed
+    return []
+
+
 
