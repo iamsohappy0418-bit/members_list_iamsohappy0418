@@ -74,6 +74,7 @@ def safe_update_cell(sheet, row: int, col: int, value, clear_first=True, max_ret
                 raise
     return False
 
+
 def header_maps(sheet):
     headers = [h.strip() for h in sheet.row_values(1)]
     idx = {h: i + 1 for i, h in enumerate(headers)}
@@ -89,6 +90,8 @@ def call_memberslist_add_orders(payload: dict):
     r.raise_for_status()
     return r.json()
 
+
+
 def call_impact_sync(payload: dict):
     """
     ✅ '임팩트' 연동: IMPACT_API_URL이 설정돼 있으면 동일 payload를 전달.
@@ -103,6 +106,8 @@ def call_impact_sync(payload: dict):
         return r.json()
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
 
 def openai_vision_extract_orders(image_bytes: io.BytesIO):
     """이미지 → 주문 JSON 추출 (gpt-4o)"""
