@@ -118,34 +118,48 @@ def parse_intent_route():
 
         intent = guess_intent(text)
 
-
         dispatch = {
             # 회원
             "register_member": parse_registration,
             "update_member":   parse_request_and_update,
             "delete_member":   parse_deletion_request,
             "find_member":     parse_natural_query,
-             # 주문
+            # 주문
             "save_order":      parse_order_text_rule,
             "find_order":      None,  # 추후 구현
             # 메모
             "save_memo":       parse_request_line,
             "find_memo":       None,  # 추후 구현
-             # 후원수당
+            # 후원수당
             "save_commission": None,  # parse_commission 붙이면 됨
             "find_commission": None,
         }
-
 
         handler = dispatch.get(intent)
         if not handler:
             return jsonify({"ok": False, "intent": "unknown", "error": f"알 수 없는 intent: {intent}"}), 400
 
         parsed = handler(text)
+        print(">>> DEBUG parsed:", parsed)   # ✅ 디버깅 로그
+
+
+        # ✅ find_member 전용 튜플 → dict 변환 처리
+        if intent == "find_member" and isinstance(parsed, tuple):
+            field, keyword = parsed
+            if keyword:
+                if field in (None, "회원명"):
+                    parsed = {"회원명": keyword}
+                else:
+                    parsed = {field: keyword}
+            else:
+                parsed = {}
+
         return jsonify({"ok": True, "intent": intent, "data": parsed}), 200
+
     except Exception as e:
         traceback.print_exc()
         return jsonify({"ok": False, "error": str(e)}), 500
+
     
 
 
@@ -1032,8 +1046,12 @@ def delete_order_confirm():
 # ======================================================================================
 # 헬스체크 & 디버그
 # ======================================================================================
-
-
+@app.route("/debug-intent", methods=["POST"], endpoint="debug_intent_v2")
+def debug_intent_route():
+    data = request.get_json(force=True) or {}
+    text = (data.get("요청문") or data.get("text") or "").strip()
+    intent = guess_intent(text)
+    return jsonify({"ok": True, "intent": intent, "raw_text": text})
 
 
 # -------------------- 실행 --------------------

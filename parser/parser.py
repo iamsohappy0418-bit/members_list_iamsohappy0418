@@ -1,6 +1,26 @@
 # parser.py
+import re
+
 def parse_natural_query(text: str):
-    return {"query": text}
+    """
+    자연어에서 조회 조건 추출
+    - "홍길동 회원조회" → ("회원명", "홍길동")
+    - "12345 회원조회" → ("회원번호", "12345")
+    """
+    text = text.strip()
+
+    # 회원번호로 조회 (숫자만 있을 경우)
+    if re.fullmatch(r"\d+", text.replace("회원조회", "").strip()):
+        return "회원번호", text.replace("회원조회", "").strip()
+
+    # 회원명으로 조회 (예: 홍길동 회원조회)
+    m = re.match(r"(.+)\s*회원조회", text)
+    if m:
+        return "회원명", m.group(1).strip()
+
+    return None, None
+
+
 
 def parse_deletion_request(text: str):
     return {"삭제대상": text}
