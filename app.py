@@ -10,10 +10,10 @@ from gspread.exceptions import APIError, WorksheetNotFound
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from typing import Tuple, Optional
-from utils.sheets import get_ws
+
 # ✅ utils/sheets 모듈에서 불러오기
-from utils.sheets import get_ws, get_member_info
 from utils.http import call_memberslist_add_orders, MemberslistError
+from utils.sheets import get_ws, get_all
 
 
 
@@ -79,14 +79,6 @@ if not os.path.exists(CREDS_PATH):
     raise FileNotFoundError(f"Google credentials 파일을 찾을 수 없습니다: {CREDS_PATH}")
 
 
-# 환경변수 가져오기
-cred_file = os.getenv("GOOGLE_CREDENTIALS_PATH", "credentials.json")
-sheet_title = os.getenv("GOOGLE_SHEET_TITLE")
-if not sheet_title:
-    raise EnvironmentError("환경변수 GOOGLE_SHEET_TITLE이 설정되지 않았습니다.")
-# gspread 연결
-gc = gspread.service_account(filename=cred_file)
-sh = gc.open(sheet_title)   # 시트 전체 파일 핸들
 
 
 
@@ -116,7 +108,7 @@ def healthz():
 # parse-intent
 #============================================================================
 @app.route("/parse-intent", methods=["POST"])
-def parse_intent_route():
+def parse_intent_route(): 
     try:
         data = request.get_json(force=True) or {}
         text = (data.get("text") or data.get("요청문") or "").strip()
@@ -124,21 +116,51 @@ def parse_intent_route():
             return jsonify({"ok": False, "error": "text(또는 요청문)이 비어 있습니다."}), 400
 
         intent = guess_intent(text)
-        parsed = {}
 
-        # === 임시: 회원조회 직접 파싱 ===
-        if intent == "find_member":
-            if "회원조회" in text:
-                keyword = text.replace("회원조회", "").strip()
-                if keyword.isdigit():
-                    parsed = {"회원번호": keyword}
-                else:
+        dispatch = {
+            # 회원
+            "register_member": parse_registration,
+            "update_member":   parse_request_and_update,
+            "delete_member":   parse_deletion_request,
+            "find_member":     parse_natural_query,
+            # 주문
+            "save_order":      parse_order_text_rule,
+            "find_order":      None,  # 추후 구현
+            # 메모
+            "save_memo":       parse_request_line,
+            "find_memo":       None,  # 추후 구현
+            # 후원수당
+            "save_commission": None,  # parse_commission 붙이면 됨
+            "find_commission": None,
+        }
+
+        handler = dispatch.get(intent)
+        if not handler:
+            return jsonify({"ok": False, "intent": "unknown", "error": f"알 수 없는 intent: {intent}"}), 400
+
+
+
+        # 👉 여기서 handler 실행
+        parsed = handler(text)
+        print(">>> DEBUG parsed:", parsed, flush=True)
+
+
+        # 👉 여기서 튜플 → dict 변환
+        if intent == "find_member" and isinstance(parsed, tuple):
+            field, keyword = parsed
+            if keyword:
+                if field in (None, "회원명"):
                     parsed = {"회원명": keyword}
+                else:
+                    parsed = {field: keyword}
+            else:
+                parsed = {}
 
+        # 👉 마지막에 응답 반환
         return jsonify({"ok": True, "intent": intent, "data": parsed}), 200
 
     except Exception as e:
-        import traceback; traceback.print_exc()
+        traceback.print_exc()
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
@@ -165,12 +187,13 @@ def find_member_route():
             return jsonify({"error": "회원명 또는 회원번호를 입력해야 합니다."}), 400
 
         ws = get_ws("DB")
-        records = ws.get_all_records()
-        if not records:
-            return jsonify({"error": "DB 시트에 레코드가 없습니다."}), 404
+        headers, rows = get_all(ws)
+        if not rows:
+            return jsonify({"error": "DB 시트에 데이터가 없습니다."}), 404
 
         matched = []
-        for r in records:
+        for row in rows:
+            r = dict(zip(headers, row))
             if name and (r.get("회원명") or "").strip() == name:
                 matched.append(r)
             elif number and (r.get("회원번호") or "").strip() == number:
@@ -178,6 +201,8 @@ def find_member_route():
 
         if not matched:
             return jsonify({"error": "해당 회원 정보를 찾을 수 없습니다."}), 404
+
+        # 결과 반환 (1명만 있으면 단일 dict, 여러 명이면 리스트)
         if len(matched) == 1:
             return jsonify(matched[0]), 200
 
@@ -195,6 +220,7 @@ def find_member_route():
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
 
 
 
@@ -231,6 +257,8 @@ def save_member_route():
         ws = get_ws("DB")
         headers = ws.row_values(1)
         records = ws.get_all_records()
+        print("📌 headers:", headers)   # 서버 콘솔에 출력
+        print("📌 첫 행 row 예시:", rows[0] if rows else None)
 
         # 기존 갱신
         for i, row in enumerate(records):
