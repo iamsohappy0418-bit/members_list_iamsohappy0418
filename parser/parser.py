@@ -1,31 +1,46 @@
 # parser.py
 import re
 
+# =============================================================
+import re
+from typing import Tuple, Optional
+
+
 def parse_natural_query(text: str):
     """
     자연어에서 조회 조건 추출
     - "홍길동 회원조회" → ("회원명", "홍길동")
     - "12345 회원조회" → ("회원번호", "12345")
     """
+    if not text:
+        return None, None
+
     text = text.strip()
 
-    # 회원번호로 조회 (숫자만 있을 경우)
-    if re.fullmatch(r"\d+", text.replace("회원조회", "").strip()):
-        return "회원번호", text.replace("회원조회", "").strip()
+    # "회원조회" 키워드가 있으면 처리
+    if "회원조회" in text:
+        keyword = text.replace("회원조회", "").strip()
+        if not keyword:
+            return None, None
 
-    # 회원명으로 조회 (예: 홍길동 회원조회)
-    m = re.match(r"(.+)\s*회원조회", text)
-    if m:
-        return "회원명", m.group(1).strip()
+        # 숫자만 있으면 회원번호
+        if re.fullmatch(r"\d+", keyword):
+            return "회원번호", keyword
+
+        # 기본은 회원명
+        return "회원명", keyword
 
     return None, None
 
 
 
+
+
+# =============================================================
 def parse_deletion_request(text: str):
     return {"삭제대상": text}
 
-
+# =============================================================
 def guess_intent(text: str) -> str:
     """
     자연어 문장에서 intent 추측

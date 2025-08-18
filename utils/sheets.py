@@ -9,24 +9,52 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # 🔐 gspread 인증 클라이언트 생성
-def get_gspread_client():
-    """환경변수 설정에 따라 gspread 클라이언트 생성"""
-    # 1) 최신 방식: gspread.service_account()
-    cred_file = os.getenv("GOOGLE_SHEET_CREDENTIALS")
-    if cred_file and os.path.exists(cred_file):
-        return gspread.service_account(filename=cred_file)
+def _get_client():
+    """gspread 클라이언트 생성"""
+    scopes = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    cred_file = os.getenv("GOOGLE_CREDENTIALS_PATH", "credentials.json")
+    creds = ServiceAccountCredentials.from_json_keyfile_name(cred_file, scopes)
+    return gspread.authorize(creds)
 
-    # 2) 구방식: ServiceAccountCredentials + authorize()
-    creds_path = os.getenv("GOOGLE_CREDENTIALS_PATH")
-    if creds_path and os.path.exists(creds_path):
-        scope = [
-            "https://spreadsheets.google.com/feeds",
-            "https://www.googleapis.com/auth/drive"
-        ]
-        creds = ServiceAccountCredentials.from_json_keyfile_name(creds_path, scope)
-        return gspread.authorize(creds)
+def get_ws(sheet_name: str):
+    """
+    구글 시트 워크시트 객체 가져오기
+    - sheet_name: 워크시트 탭 이름 (예: 'DB', '제품주문')
+    """
+    sheet_title = os.getenv("GOOGLE_SHEET_TITLE")
+    if not sheet_title:
+        raise EnvironmentError("환경변수 GOOGLE_SHEET_TITLE이 설정되지 않았습니다.")
 
-    raise FileNotFoundError("서비스 계정 credential 파일을 찾을 수 없습니다.")
+    gc = _get_client()
+    try:
+        sh = gc.open(sheet_title)   # ✅ 스프레드시트 '파일 제목'
+    except gspread.SpreadsheetNotFound:
+        raise FileNotFoundError(f"구글 시트를 찾을 수 없습니다: {sheet_title}")
+
+    try:
+        return sh.worksheet(sheet_name)  # ✅ 워크시트(탭) 이름
+    except gspread.WorksheetNotFound:
+        raise FileNotFoundError(f"워크시트를 찾을 수 없습니다: {sheet_name}")
+
+def get_all(ws):
+    """
+    워크시트에서 모든 행 데이터를 가져오기
+    - 반환: (headers, rows)
+    """
+    rows = ws.get_all_values()
+    if not rows:
+        return [], []
+    headers, data = rows[0], rows[1:]
+    return headers, data
+
+
+
+
+
+
 
 
 # 📄 스프레드시트 핸들 가져오기
