@@ -81,11 +81,12 @@ if not os.path.exists(CREDS_PATH):
 
 # 환경변수 가져오기
 cred_file = os.getenv("GOOGLE_CREDENTIALS_PATH", "credentials.json")
-sheet_name = os.getenv("GOOGLE_SHEET_NAME")
-
+sheet_title = os.getenv("GOOGLE_SHEET_TITLE")
+if not sheet_title:
+    raise EnvironmentError("환경변수 GOOGLE_SHEET_TITLE이 설정되지 않았습니다.")
 # gspread 연결
 gc = gspread.service_account(filename=cred_file)
-sh = gc.open(sheet_name)   # 시트 전체 파일 핸들
+sh = gc.open(sheet_title)   # 시트 전체 파일 핸들
 
 
 
