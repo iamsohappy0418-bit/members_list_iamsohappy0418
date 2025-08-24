@@ -379,12 +379,36 @@ def ensure_orders_list(parsed: Any) -> List[Dict[str, Any]]:
     """
     if not parsed:
         return []
+
+    # 문자열(JSON)인 경우 → 파싱
     if isinstance(parsed, str):
         try:
             parsed = json.loads(parsed)
         except Exception:
             return []
+
+    # dict인 경우
     if isinstance(parsed, dict):
+        # case1: {"orders": [...]} 형태
         if "orders" in parsed and isinstance(parsed["orders"], list):
             return parsed["orders"]
-        if all(isinstance(v, (str, int, float, type(None))) for v in parsed
+
+        # case2: dict 하나만 있는 경우 → 값들이 모두 단순형이면 리스트로 감싸줌
+        if all(
+            isinstance(v, (str, int, float, type(None)))
+            for v in parsed.values()
+        ):
+            return [parsed]
+
+        return []
+
+    # 이미 list인 경우
+    if isinstance(parsed, list):
+        # 리스트 안에 dict 가 여러 개 있을 때는 그대로
+        if all(isinstance(item, dict) for item in parsed):
+            return parsed
+        else:
+            return []
+
+    # 그 외 타입은 무시
+    return []
