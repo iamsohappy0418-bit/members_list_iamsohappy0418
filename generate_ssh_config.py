@@ -4,8 +4,8 @@ from pathlib import Path
 users = [
     {"host": "github-boraminfo",    "identity": "id_ed25519_boraminfo"},
     {"host": "github-ehlhappyday",  "identity": "id_ed25519_ehlhappyday"},
-    {"host": "github-sohee4463",    "identity": "id_ed25519_sohee4463"},
-    {"host": "github-boraminfo5",   "identity": "id_ed25519_boraminfo5"},
+    {"host": "github-iamsohappy0418",    "identity": "id_ed25519_iamsohappy0418"},
+    {"host": "github-boraminfo",   "identity": "id_ed25519_boraminfo"},
 ]
 
 def generate_ssh_config():
@@ -17,7 +17,7 @@ def generate_ssh_config():
     lines = []
 
     for user in users:
-        identity_path = Path.home() / "Desktop" / "ChatGPT" / user["identity"]
+        identity_path = Path("C:/ChatGPT") / user["identity"]
         lines.append(f"""Host {user['host']}
     HostName github.com
     User git
