@@ -15,6 +15,7 @@ from .parser import (
     parse_request_line,   # ✅ 기존 추가
     match_condition,      # ✅ 기존 추가
     remove_josa,          # ✅ 기존 추가
+    ensure_orders_list,
 )
 __all__ = [
     "now_kst",
@@ -33,5 +34,6 @@ __all__ = [
     "parse_request_line",   # ✅ 기존 추가
     "match_condition",      # ✅ 기존 추가
     "remove_josa",          # ✅ 기존 추가
+    "ensure_orders_list",
 ]
 

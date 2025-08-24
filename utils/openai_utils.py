@@ -7,8 +7,19 @@ import base64
 import requests
 from typing import List, Dict, Any
 
+# ⬇️ 로컬에서만 .env 자동 로드
+if os.getenv("RENDER") is None:
+    try:
+        from dotenv import load_dotenv
+        if os.path.exists(".env"):
+            load_dotenv(".env")
+    except Exception:
+        pass
+
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_API_URL = os.getenv("OPENAI_API_URL")  # e.g. https://api.openai.com/v1/chat/completions
+MODEL_NAME     = os.getenv("OPENAI_MODEL", "gpt-4o")
+
 
 def _ensure_orders_list(data: Any) -> List[Dict[str, Any]]:
     """응답을 무조건 orders 리스트 형태로 보정"""
@@ -20,9 +31,10 @@ def _ensure_orders_list(data: Any) -> List[Dict[str, Any]]:
         return data
     return []
 
+
 def openai_vision_extract_orders(image_bytes: io.BytesIO) -> List[Dict[str, Any]]:
     """
-    이미지 → 주문 JSON 추출 (gpt-4o)
+    이미지 → 주문 JSON 추출 (OpenAI Vision 모델)
     반환: [{'제품명':..., '제품가격':..., 'PV':..., '주문자_고객명':..., '주문자_휴대폰번호':..., '배송처':..., '결재방법': '', '수령확인': ''}, ...]
     """
     if not OPENAI_API_KEY:
@@ -46,7 +58,7 @@ def openai_vision_extract_orders(image_bytes: io.BytesIO) -> List[Dict[str, Any]
         "Content-Type": "application/json",
     }
     payload = {
-        "model": "gpt-4o",
+        "model": MODEL_NAME,
         "messages": [{
             "role": "user",
             "content": [
@@ -60,13 +72,28 @@ def openai_vision_extract_orders(image_bytes: io.BytesIO) -> List[Dict[str, Any]
     r = requests.post(OPENAI_API_URL, headers=headers, json=payload, timeout=60)
     r.raise_for_status()
 
-    content = r.json()["choices"][0]["message"]["content"]
-    clean = re.sub(r"```(?:json)?", "", content, flags=re.MULTILINE).strip()
+    resp = r.json()
+    msg = resp["choices"][0]["message"]
+    content = msg.get("content", "")
+
+    # 문자열/리스트 모두 대응
+    if isinstance(content, list):
+        content_text = " ".join(
+            c.get("text", "")
+            for c in content
+            if isinstance(c, dict) and c.get("type") == "text"
+        ).strip()
+    else:
+        content_text = str(content).strip()
+
+    # 코드펜스(json/일반) 제거
+    clean = re.sub(r"```(?:json)?|```", "", content_text, flags=re.IGNORECASE).strip()
 
     try:
         data = json.loads(clean)
     except json.JSONDecodeError:
-        data = {"raw_text": content}
+        # 모델이 순수 JSON이 아닌 텍스트를 반환한 경우, raw 텍스트로 보존
+        data = {"raw_text": content_text}
 
     orders_list = _ensure_orders_list(data)
 

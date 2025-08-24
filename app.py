@@ -10,28 +10,28 @@ from gspread.exceptions import APIError, WorksheetNotFound
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from typing import Tuple, Optional
+import pytz
+from datetime import datetime
 
-# ✅ utils/sheets 모듈에서 불러오기
+
 from utils.http import call_memberslist_add_orders, MemberslistError
-from utils.sheets import get_ws, get_all
 
+# app.py
 
+from utils.openai_utils import openai_vision_extract_orders
 
-# 블루프린트 임포트
-# from routes.intent import bp_intent
-# 필요하면 추가
-# from routes.members import bp_members
-# from routes.orders import bp_orders
-
+# ✅ 외부 API 유틸 (유지)
+from utils.http import (
+    call_memberslist_add_orders,
+    MemberslistError
+    
+   
+)
 
 # -------------------- Flask --------------------
 app = Flask(__name__)
 
-
-
 # ✅ parser.py 에서 필요한 함수만 임포트
-# ✅ 네임스페이스 없이 바로 호출 가능
-
 from parser import (
     # 기본 intent 관련
     guess_intent,
@@ -52,14 +52,13 @@ from parser import (
     parse_request_and_update,
     # 주문 처리
     parse_order_text_rule,
- 
     # 메모/검색용
-    parse_request_line,
+    parse_request_line
+    
 )
-
 from parser.parser import ensure_orders_list
 
-# -------------------- 환경 --------------------
+# -------------------- 환경 로드 (.env는 로컬에서만) --------------------
 if os.getenv("RENDER") is None:
     from dotenv import load_dotenv
     if not os.path.exists(".env"):
@@ -69,30 +68,53 @@ if os.getenv("RENDER") is None:
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_API_URL = os.getenv("OPENAI_API_URL")             # e.g. https://api.openai.com/v1/chat/completions
 MEMBERSLIST_API_URL = os.getenv("MEMBERSLIST_API_URL")   # 기존 외부 저장 API
-IMPACT_API_URL = os.getenv("IMPACT_API_URL")             # ✅ 요청하신 '임팩트' 연동용 (선택)
+IMPACT_API_URL = os.getenv("IMPACT_API_URL")             # (선택) 임팩트 연동
 GOOGLE_SHEET_TITLE = os.getenv("GOOGLE_SHEET_TITLE")
-CREDS_PATH = os.getenv("GOOGLE_CREDENTIALS_PATH", "credentials.json")
 
 if not GOOGLE_SHEET_TITLE:
     raise EnvironmentError("환경변수 GOOGLE_SHEET_TITLE이 설정되지 않았습니다.")
-if not os.path.exists(CREDS_PATH):
-    raise FileNotFoundError(f"Google credentials 파일을 찾을 수 없습니다: {CREDS_PATH}")
 
+# -------------------- Google Sheets 자동 인증/연결 --------------------
+def get_gspread_client():
+    """
+    Render: GOOGLE_CREDENTIALS_JSON 사용
+    Local : GOOGLE_CREDENTIALS_PATH(기본 'credentials.json') 파일 사용
+    """
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive",
+    ]
 
+    creds_json = os.getenv("GOOGLE_CREDENTIALS_JSON")  # Render 환경 변수
+    if creds_json:
+        creds_dict = json.loads(creds_json)
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    else:
+        creds_path = os.getenv("GOOGLE_CREDENTIALS_PATH", "credentials.json")
+        if not os.path.exists(creds_path):
+            raise FileNotFoundError(f"Google credentials 파일을 찾을 수 없습니다: {creds_path}")
+        creds = ServiceAccountCredentials.from_json_keyfile_name(creds_path, scope)
 
+    return gspread.authorize(creds)
 
+# ✅ 전역 클라이언트/시트 핸들 (앱 시작 시 1회 연결)
+gclient = get_gspread_client()
+gsheet = gclient.open(GOOGLE_SHEET_TITLE)
+print(f"✅ 시트 '{GOOGLE_SHEET_TITLE}'에 연결되었습니다.", flush=True)
 
-# 외부 API (임팩트/멤버리스트/OpenAI) 외부 API로 주문 데이터를 전달
-def call_memberslist_add_orders(payload: dict):
-    """기존 memberslist API"""
-    if not MEMBERSLIST_API_URL:
-        raise RuntimeError("MEMBERSLIST_API_URL 미설정")
-    r = requests.post(MEMBERSLIST_API_URL, json=payload, timeout=30)
-    r.raise_for_status()
-    return r.json()
+# 워크시트/데이터 유틸 (이 파일 내에서 바로 사용)
+def get_ws(sheet_name: str):
+    """워크시트 핸들을 반환합니다."""
+    try:
+        return gsheet.worksheet(sheet_name)
+    except WorksheetNotFound:
+        raise FileNotFoundError(f"워크시트를 찾을 수 없습니다: {sheet_name}")
 
+def get_all(ws):
+    """워크시트의 레코드를 dict 리스트로 반환합니다."""
+    return ws.get_all_records()
 
-
+# -------------------- 루트/헬스 --------------------
 @app.route("/")
 def root():
     return "Flask 서버 실행 중 (app/parser 분리)"
@@ -101,14 +123,11 @@ def root():
 def healthz():
     return "ok"
 
-
-
-
-# ===========================================================================
+# =======================================================================
 # parse-intent
-#============================================================================
+# =======================================================================
 @app.route("/parse-intent", methods=["POST"])
-def parse_intent_route(): 
+def parse_intent_route():
     try:
         data = request.get_json(force=True) or {}
         text = (data.get("text") or data.get("요청문") or "").strip()
@@ -130,7 +149,7 @@ def parse_intent_route():
             "save_memo":       parse_request_line,
             "find_memo":       None,  # 추후 구현
             # 후원수당
-            "save_commission": None,  # parse_commission 붙이면 됨
+            "save_commission": None,  # parse_commission 연결 예정
             "find_commission": None,
         }
 
@@ -138,30 +157,33 @@ def parse_intent_route():
         if not handler:
             return jsonify({"ok": False, "intent": "unknown", "error": f"알 수 없는 intent: {intent}"}), 400
 
-
-
-        # 👉 여기서 handler 실행
+        # 👉 파서 실행
         parsed = handler(text)
         print(">>> DEBUG parsed:", parsed, flush=True)
 
-
-        # 👉 여기서 튜플 → dict 변환
+        # 👉 find_member 반환형 보정 (tuple -> dict)
         if intent == "find_member" and isinstance(parsed, tuple):
             field, keyword = parsed
             if keyword:
-                if field in (None, "회원명"):
-                    parsed = {"회원명": keyword}
-                else:
-                    parsed = {field: keyword}
+                parsed = {"회원명": keyword} if field in (None, "회원명") else {field: keyword}
             else:
                 parsed = {}
 
-        # 👉 마지막에 응답 반환
         return jsonify({"ok": True, "intent": intent, "data": parsed}), 200
 
     except Exception as e:
         traceback.print_exc()
         return jsonify({"ok": False, "error": str(e)}), 500
+
+# -------------------- (선택) KST 유틸 --------------------
+def now_kst_local():
+    return datetime.now(pytz.timezone("Asia/Seoul"))
+
+# -------------------- 디버그 출력 --------------------
+print("✅ GOOGLE_SHEET_TITLE:", os.getenv("GOOGLE_SHEET_TITLE"))
+print("✅ GOOGLE_SHEET_KEY 존재 여부:", "Yes" if os.getenv("GOOGLE_SHEET_KEY") else "No", flush=True)
+
+
 
 
 
@@ -187,31 +209,32 @@ def find_member_route():
             return jsonify({"error": "회원명 또는 회원번호를 입력해야 합니다."}), 400
 
         ws = get_ws("DB")
-        headers, rows = get_all(ws)
+        rows = get_all(ws)   # ✅ dict 리스트 반환
+
         if not rows:
             return jsonify({"error": "DB 시트에 데이터가 없습니다."}), 404
 
         matched = []
-        for row in rows:
-            r = dict(zip(headers, row))
-            if name and (r.get("회원명") or "").strip() == name:
-                matched.append(r)
-            elif number and (r.get("회원번호") or "").strip() == number:
-                matched.append(r)
+        for row in rows:   # row는 dict
+            if name and (row.get("회원명") or "").strip() == name:
+                matched.append(row)
+            elif number and (row.get("회원번호") or "").strip() == number:
+                matched.append(row)
 
         if not matched:
             return jsonify({"error": "해당 회원 정보를 찾을 수 없습니다."}), 404
 
-        # 결과 반환 (1명만 있으면 단일 dict, 여러 명이면 리스트)
+        # 결과가 1건이면 그대로 반환
         if len(matched) == 1:
             return jsonify(matched[0]), 200
 
+        # 여러 건이면 최소 정보만 반환
         mini = [
             {
                 "번호": i + 1,
-                "회원명": m.get("회원명"),
-                "회원번호": m.get("회원번호"),
-                "휴대폰번호": m.get("휴대폰번호"),
+                "회원명": m.get("회원명", ""),
+                "회원번호": m.get("회원번호", ""),
+                "휴대폰번호": m.get("휴대폰번호", "")
             }
             for i, m in enumerate(matched)
         ]
@@ -220,6 +243,7 @@ def find_member_route():
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
 
 
 
@@ -255,15 +279,18 @@ def save_member_route():
             return jsonify({"error": "회원명을 추출할 수 없습니다"}), 400
 
         ws = get_ws("DB")
-        headers = ws.row_values(1)
-        records = ws.get_all_records()
-        print("📌 headers:", headers)   # 서버 콘솔에 출력
-        print("📌 첫 행 row 예시:", rows[0] if rows else None)
+        # ✅ 헤더 공백 제거 버전
+        headers = [h.strip() for h in ws.row_values(1)]
 
-        # 기존 갱신
+        records = ws.get_all_records()
+
+        print("📌 headers:", headers)          # 서버 콘솔 확인용
+        print("📌 첫 행 row 예시:", records[0] if records else None)
+
+        # ✅ 기존 회원 갱신
         for i, row in enumerate(records):
             if (row.get("회원명") or "").strip() == name:
-                row_idx = i + 2
+                row_idx = i + 2  # 헤더 제외 실제 시트 행 번호
                 for key, val in {
                     "회원명": name,
                     "회원번호": number,
@@ -274,7 +301,7 @@ def save_member_route():
                         ws.update_cell(row_idx, headers.index(key) + 1, val)
                 return jsonify({"ok": True, "data": f"{name} 기존 회원 정보 수정 완료"}), 200
 
-        # 신규 추가
+        # ✅ 신규 추가
         row = [""] * len(headers)
         for key, val in {
             "회원명": name,
@@ -297,6 +324,7 @@ def save_member_route():
 
 
 
+
 # ======================================================================================
 # 회원 필드 다중 수정 (자연어)
 # ======================================================================================
@@ -310,47 +338,59 @@ def update_member_route():
             return jsonify({"error": "요청문이 비어 있습니다."}), 400
 
         ws = get_ws("DB")
-        headers, idx, idx_l = header_maps(sh)
-        records = ws.get_all_records()
+        headers = [h.strip() for h in ws.row_values(1)]  # 헤더만 추출
+        records = ws.get_all_records()  # ✅ dict 리스트 방식
 
         if not records:
             return jsonify({"error": "DB 시트에 레코드가 없습니다."}), 404
 
-        # 회원명 후보(길이가 긴 것 우선)
-        member_names = sorted({(r.get("회원명") or "").strip() for r in records if r.get("회원명")}, key=lambda s: -len(s))
+        # 회원명 후보 (길이가 긴 것 우선 매칭)
+        member_names = sorted(
+            {(r.get("회원명") or "").strip() for r in records if r.get("회원명")},
+            key=lambda s: -len(s)
+        )
+
         name = None
         for cand in member_names:
-            if not cand:
-                continue
-            if re.search(rf"\b{re.escape(cand)}\b", 요청문):
+            if cand and cand in 요청문:
                 name = cand
                 break
+
         if not name:
             return jsonify({"error": "요청문에서 유효한 회원명을 찾을 수 없습니다."}), 400
 
-        # 대상 행
-        target_idx = next((i for i, r in enumerate(records) if (r.get("회원명") or "").strip() == name), None)
+        # 대상 행 찾기
+        target_idx = next(
+            (i for i, r in enumerate(records) if (r.get("회원명") or "").strip() == name),
+            None
+        )
         if target_idx is None:
             return jsonify({"error": f"'{name}' 회원을 찾을 수 없습니다."}), 404
-        row_idx = target_idx + 2
+
+        row_idx = target_idx + 2  # 헤더 제외 → 실제 시트 행 번호
         member = records[target_idx]
 
-        # 파싱 및 적용
+        # 파싱 및 변경 적용
         updated_member, changed = parse_request_and_update(요청문, member)
 
         results = []
         for k, v in changed.items():
-            col = idx.get(k) or idx_l.get(k.lower())
-            if not col:
-                continue
-            ok = safe_update_cell(sheet, row_idx, col, v, clear_first=True)
-            if ok:
-                results.append({"필드": k, "값": v})
+            if k in headers:  # 헤더에 해당 필드가 존재해야 업데이트
+                col = headers.index(k) + 1
+                ok = safe_update_cell(ws, row_idx, col, v, clear_first=True)
+                if ok:
+                    results.append({"필드": k, "값": v})
 
-        return jsonify({"status": "success", "회원명": name, "수정": results}), 200
+        return jsonify({
+            "status": "success",
+            "회원명": name,
+            "수정": results
+        }), 200
+
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
 
 
 
@@ -362,8 +402,11 @@ def update_member_route():
 def ensure_backup_sheet():
     try:
         return get_ws("백업")
-    except WorksheetNotFound:
-        return sh.add_worksheet(title="백업", rows=1000, cols=3)
+    except gspread.WorksheetNotFound:
+        # 현재 스프레드시트 핸들 얻어서 새 시트 생성
+        spreadsheet = get_ws("DB").spreadsheet
+        return spreadsheet.add_worksheet(title="백업", rows=1000, cols=3)
+
 
 @app.route("/delete_member", methods=["POST"])
 def delete_member_route():
@@ -372,24 +415,36 @@ def delete_member_route():
         if not name:
             return jsonify({"error": "회원명을 입력해야 합니다."}), 400
 
-        db = get_ws("DB")
-        headers, idx, _ = header_maps(db)
-        records = db.get_all_records()
+        ws = get_ws("DB")
+        headers = [h.strip() for h in ws.row_values(1)]
+        records = ws.get_all_records()  # ✅ dict 리스트 방식
         if not records:
             return jsonify({"error": "DB 시트에 레코드가 없습니다."}), 404
 
         for i, row in enumerate(records):
             if (row.get("회원명") or "").strip() == name:
-                # 백업
-                b = ensure_backup_sheet()
-                b.insert_row([now_kst().strftime("%Y-%m-%d %H:%M"), name, json.dumps(row, ensure_ascii=False)], index=2)
-                # 삭제
-                db.delete_rows(i + 2)
+                # ✅ 백업
+                backup_ws = ensure_backup_sheet()
+                backup_ws.insert_row(
+                    [
+                        now_kst().strftime("%Y-%m-%d %H:%M"),
+                        name,
+                        json.dumps(row, ensure_ascii=False),
+                    ],
+                    index=2,
+                )
+
+                # ✅ 삭제 (헤더 포함이므로 +2)
+                ws.delete_rows(i + 2)
                 return jsonify({"message": f"'{name}' 회원 삭제 및 백업 완료"}), 200
+
         return jsonify({"error": f"'{name}' 회원을 찾을 수 없습니다."}), 404
+
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
+
 
 
 
@@ -404,25 +459,30 @@ ACTION_KEYS = {"저장", "기록", "입력"}
 
 def save_to_sheet(sheet_name: str, member_name: str, content: str) -> bool:
     ws = get_ws(sheet_name)
-    ws.insert_row([now_kst().strftime("%Y-%m-%d %H:%M"), member_name.strip(), (content or "").strip()], index=2)
+    ws.insert_row(
+        [now_kst().strftime("%Y-%m-%d %H:%M"), member_name.strip(), (content or "").strip()],
+        index=2
+    )
     return True
+
+
 
 def update_member_field_strict(member_name: str, field_name: str, value: str) -> bool:
     ws = get_ws("DB")
-    headers, idx, idx_l = header_maps(ws)
-    if "회원명" not in headers or (idx.get(field_name) is None and idx_l.get(field_name.lower()) is None):
+    headers = [h.strip() for h in ws.row_values(1)]
+
+    if "회원명" not in headers or field_name not in headers:
         raise RuntimeError("DB 시트 헤더에 필드가 없습니다.")
-    values = ws.get_all_values()
-    mcol = headers.index("회원명") + 1
-    fcol = idx.get(field_name) or idx_l.get(field_name.lower())
-    target_row = None
-    for i, row in enumerate(values[1:], start=2):
-        if len(row) >= mcol and row[mcol - 1] == member_name:
-            target_row = i
-            break
-    if target_row is None:
-        return False
-    return bool(safe_update_cell(ws, target_row, fcol, value, clear_first=True))
+
+    records = ws.get_all_records()
+    for i, row in enumerate(records):
+        if (row.get("회원명") or "").strip() == member_name.strip():
+            row_idx = i + 2  # 헤더 보정
+            col_idx = headers.index(field_name) + 1
+            return bool(safe_update_cell(ws, row_idx, col_idx, value, clear_first=True))
+    return False
+
+
 
 @app.route("/save_note_unified", methods=["POST"])
 def save_note_unified():
@@ -450,7 +510,16 @@ def save_note_unified():
     except Exception as e:
         traceback.print_exc()
         return jsonify({"ok": False, "error": str(e)}), 500
+    
 
+
+
+
+
+
+# ===================== 검색 관련 =====================
+# ===================== 검색 관련 =====================
+# ===================== 검색 관련 =====================
 @app.route("/search_memo_by_text", methods=["POST"])
 def search_memo_by_text():
     try:
@@ -461,12 +530,12 @@ def search_memo_by_text():
         match_mode = data.get("match_mode", "any")
 
         ws = get_ws("개인일지")
-        rows = ws.get_all_values()[1:]
+        records = ws.get_all_records()
         res = []
-        for r in rows:
-            if len(r) < 3: 
+        for r in records:
+            date_str, member, content = r.get("날짜"), r.get("회원명"), r.get("내용")
+            if not (date_str and member and content):
                 continue
-            date_str, member, content = r[0], r[1], r[2]
             combined = f"{member} {content}"
             if not match_condition(combined, keywords, match_mode):
                 continue
@@ -476,13 +545,16 @@ def search_memo_by_text():
                 continue
             res.append({"날짜": date_str, "회원명": member, "내용": content, "_dt": dt})
         res.sort(key=lambda x: x["_dt"], reverse=(sort_order == "desc"))
-        for r in res:
+        for r in res: 
             r.pop("_dt", None)
-        return jsonify({"검색조건": {"검색어": keywords, "매칭방식": match_mode, "정렬": sort_order, "결과_최대개수": limit},
-                        "검색결과": res[:limit]}), 200
+        return jsonify({
+            "검색조건": {"검색어": keywords, "매칭방식": match_mode, "정렬": sort_order, "결과_최대개수": limit},
+            "검색결과": res[:limit]
+        }), 200
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
 
 @app.route("/search_counseling_by_text_from_natural", methods=["POST"])
 def search_counseling_by_text_from_natural():
@@ -494,12 +566,12 @@ def search_counseling_by_text_from_natural():
         match_mode = data.get("match_mode", "any")
 
         ws = get_ws("상담일지")
-        rows = ws.get_all_values()[1:]
+        records = ws.get_all_records()
         res = []
-        for r in rows:
-            if len(r) < 3: 
+        for r in records:
+            date_str, member, content = r.get("날짜"), r.get("회원명"), r.get("내용")
+            if not (date_str and member and content):
                 continue
-            date_str, member, content = r[0], r[1], r[2]
             comb = f"{member} {content}".lower()
             cond = (all(k.lower() in comb for k in keywords) if match_mode == "all"
                     else any(k.lower() in comb for k in keywords))
@@ -511,13 +583,16 @@ def search_counseling_by_text_from_natural():
                 continue
             res.append({"날짜": date_str, "회원명": member, "내용": content, "_dt": dt})
         res.sort(key=lambda x: x["_dt"], reverse=(sort_order == "desc"))
-        for r in res:
+        for r in res: 
             r.pop("_dt", None)
-        return jsonify({"검색조건": {"키워드": keywords, "매칭방식": match_mode, "정렬": sort_order},
-                        "검색결과": res[:limit]}), 200
+        return jsonify({
+            "검색조건": {"키워드": keywords, "매칭방식": match_mode, "정렬": sort_order},
+            "검색결과": res[:limit]
+        }), 200
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
 
 @app.route("/search_activity_by_text_from_natural", methods=["POST"])
 def search_activity_by_text_from_natural():
@@ -529,12 +604,12 @@ def search_activity_by_text_from_natural():
         match_mode = data.get("match_mode", "any")
 
         ws = get_ws("활동일지")
-        rows = ws.get_all_values()[1:]
+        records = ws.get_all_records()
         res = []
-        for r in rows:
-            if len(r) < 3:
+        for r in records:
+            date_str, member, content = r.get("날짜"), r.get("회원명"), r.get("내용")
+            if not (date_str and member and content):
                 continue
-            date_str, member, content = r[0], r[1], r[2]
             comb = f"{member} {content}".lower()
             cond = (all(k.lower() in comb for k in keywords) if match_mode == "all"
                     else any(k.lower() in comb for k in keywords))
@@ -546,13 +621,16 @@ def search_activity_by_text_from_natural():
                 continue
             res.append({"날짜": date_str, "회원명": member, "내용": content, "_dt": dt})
         res.sort(key=lambda x: x["_dt"], reverse=(sort_order == "desc"))
-        for r in res:
+        for r in res: 
             r.pop("_dt", None)
-        return jsonify({"검색조건": {"키워드": keywords, "매칭방식": match_mode, "정렬": sort_order},
-                        "검색결과": res[:limit]}), 200
+        return jsonify({
+            "검색조건": {"키워드": keywords, "매칭방식": match_mode, "정렬": sort_order},
+            "검색결과": res[:limit]
+        }), 200
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
 
 @app.route("/search_all_memo_by_text_from_natural", methods=["POST"])
 def search_all_memo_by_text_from_natural():
@@ -561,11 +639,14 @@ def search_all_memo_by_text_from_natural():
         raw = data.get("text") or " ".join(data.get("keywords", []))
         if not (raw or "").strip():
             return jsonify({"error": "검색어가 없습니다."}), 400
+
         words = raw.split()
         has_all = "동시" in words
         keywords = [w for w in words if w != "동시"]
 
         payload = {"keywords": keywords, "limit": 20, "sort": "desc", "match_mode": "all" if has_all else "any"}
+
+        # 각각 검색 실행 (dict 기반 라우트 재사용)
         with app.test_client() as c:
             a = c.post("/search_memo_by_text", json=payload)
             b = c.post("/search_activity_by_text_from_natural", json=payload)
@@ -584,10 +665,12 @@ def search_all_memo_by_text_from_natural():
             for r in ext(resp):
                 lines.append(f"{r['날짜']} {r['회원명']} {r['내용']}")
             lines.append("")
+
         return Response("\n".join(lines), mimetype="text/plain; charset=utf-8")
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
 
 
 
@@ -636,37 +719,7 @@ def search_by_natural_language():
 
 
 
-def openai_vision_extract_orders(image_bytes: io.BytesIO):
-    """OpenAI Vision을 통해 이미지에서 주문 JSON 추출"""
-    image_base64 = base64.b64encode(image_bytes.getvalue()).decode("utf-8")
-    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
-    prompt = (
-        "이미지를 분석하여 JSON 형식으로 추출하세요. "
-        "여러 개의 제품이 있을 경우 'orders' 배열에 모두 담으세요. "
-        "질문하지 말고 추출된 orders 전체를 그대로 저장할 준비를 하세요. "
-        "(이름, 휴대폰번호, 주소)는 소비자 정보임. "
-        "회원명, 결재방법, 수령확인, 주문일자 무시. "
-        "필드: 제품명, 제품가격, PV, 주문자_고객명, 주문자_휴대폰번호, 배송처"
-    )
-    payload = {
-        "model": "gpt-4o",
-        "messages": [{
-            "role": "user",
-            "content": [
-                {"type": "text", "text": prompt},
-                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}}
-            ]
-        }],
-        "temperature": 0
-    }
-    r = requests.post(OPENAI_API_URL, headers=headers, json=payload, timeout=60)
-    r.raise_for_status()
-    result_text = r.json()["choices"][0]["message"]["content"]
-    clean_text = re.sub(r"```(?:json)?", "", result_text, flags=re.MULTILINE).strip()
-    try:
-        return json.loads(clean_text)
-    except json.JSONDecodeError:
-        return {"raw_text": result_text}
+
 
 
 
@@ -688,11 +741,15 @@ def call_memberslist_add_orders(payload: dict):
         # 1️⃣ 기본 URL 시도
         r = requests.post(MEMBERSLIST_API_URL, json=payload, timeout=30)
         r.raise_for_status()
-        return r.json()
+        try:
+            return r.json()
+        except ValueError:
+            return {"ok": True, "raw": r.text}
 
     except requests.HTTPError as e:
-        # 2️⃣ 404일 경우 addOrders fallback 지원
-        if r.status_code == 404:
+        resp = e.response
+        if resp is not None and resp.status_code == 404:
+            # 2️⃣ 404일 경우 addOrders <-> add_orders fallback
             if "add_orders" in MEMBERSLIST_API_URL:
                 fallback_url = MEMBERSLIST_API_URL.replace("add_orders", "addOrders")
             elif "addOrders" in MEMBERSLIST_API_URL:
@@ -702,10 +759,18 @@ def call_memberslist_add_orders(payload: dict):
 
             r2 = requests.post(fallback_url, json=payload, timeout=30)
             r2.raise_for_status()
-            return r2.json()
+            try:
+                return r2.json()
+            except ValueError:
+                return {"ok": True, "raw": r2.text}
 
-        # 다른 오류는 그대로 raise
+        # 다른 HTTP 오류는 그대로 re-raise
         raise
+    except requests.RequestException as e:
+        raise RuntimeError(f"Memberslist RequestException: {e}") from e
+
+
+
 
 
 
@@ -749,8 +814,8 @@ def _handle_image_order_upload(image_bytes: io.BytesIO, member_name: str, mode: 
 
     if mode == "api":
         saved = call_memberslist_add_orders({"회원명": member_name, "orders": orders_list})
-        # 임팩트 동기화(옵션)
-        call_impact_sync({"type": "order", "member": member_name, "orders": orders_list, "source": "sheet_gpt"})
+        # ✅ 임팩트 동기화(옵션) — 비활성화
+        # call_impact_sync({"type": "order", "member": member_name, "orders": orders_list, "source": "sheet_gpt"})
         return jsonify({
             "mode": "api",
             "message": f"{member_name}님의 주문이 저장되었습니다. (memberslist API)",
@@ -793,74 +858,12 @@ def _handle_image_order_upload(image_bytes: io.BytesIO, member_name: str, mode: 
             ]
             orders_ws.insert_row(row, index=2)
             saved_rows += 1
-        # 임팩트 동기화(옵션)
-        call_impact_sync({"type": "order", "member": member_name, "orders": orders_list, "source": "sheet_gpt"})
+
+        # ✅ 임팩트 동기화(옵션) — 비활성화
+        # call_impact_sync({"type": "order", "member": member_name, "orders": orders_list, "source": "sheet_gpt"})
         return jsonify({"mode": "sheet", "status": "success", "saved_rows": saved_rows}), 200
 
     return jsonify({"error": "mode 값은 'api' 또는 'sheet'여야 합니다."}), 400
-
-
-
-
-
-
-
-
-
-
-
-def openai_vision_extract_orders(image_bytes: io.BytesIO):
-    """이미지 → 주문 JSON 추출 (gpt-4o)"""
-    image_b64 = base64.b64encode(image_bytes.getvalue()).decode("utf-8")
-    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
-    prompt = (
-        "이미지를 분석하여 JSON 형식으로 추출하세요. "
-        "여러 개의 제품이 있을 경우 'orders' 배열에 모두 담으세요. "
-        "질문하지 말고 추출된 orders 전체를 그대로 저장할 준비를 하세요. "
-        "(이름, 휴대폰번호, 주소)는 소비자 정보임. "
-        "회원명, 결재방법, 수령확인, 주문일자 무시. "
-        "필드: 제품명, 제품가격, PV, 주문자_고객명, 주문자_휴대폰번호, 배송처"
-    )
-    payload = {
-        "model": "gpt-4o",
-        "messages": [{
-            "role": "user",
-            "content": [
-                {"type": "text", "text": prompt},
-                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}}
-            ]
-        }],
-        "temperature": 0
-    }
-    r = requests.post(OPENAI_API_URL, headers=headers, json=payload, timeout=60)
-    r.raise_for_status()
-    content = r.json()["choices"][0]["message"]["content"]
-    clean = re.sub(r"```(?:json)?", "", content, flags=re.MULTILINE).strip()
-    try:
-        data = json.loads(clean)
-    except json.JSONDecodeError:
-        data = {"raw_text": content}
-    # orders 리스트 보장
-    if isinstance(data, dict) and "orders" in data:
-        orders_list = data["orders"]
-    elif isinstance(data, dict):
-        orders_list = [data]
-    elif isinstance(data, list):
-        orders_list = data
-    else:
-        orders_list = []
-    # 정책: 결재방법/수령확인은 공란 유지 + 문자열 필드 trim
-    for o in orders_list:
-        o.setdefault("결재방법", "")
-        o.setdefault("수령확인", "")
-        for k, v in o.items():
-            if isinstance(v, str):
-                o[k] = v.strip()
-
-    return orders_list
-
-
-
 
 
 
@@ -897,6 +900,9 @@ def upload_order_auto():
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
+
+
 
 # 텍스트 → 주문 JSON (OpenAI)
 def parse_order_from_text(text: str):
@@ -937,6 +943,9 @@ JSON 형식:
     except json.JSONDecodeError:
         return {"raw_text": result_text}
 
+
+
+
 @app.route("/upload_order_text", methods=["POST"])
 def upload_order_text():
     text = request.form.get("message") or (request.json.get("message") if request.is_json else None)
@@ -956,11 +965,14 @@ def upload_order_text():
     try:
         saved = call_memberslist_add_orders({"회원명": member_name, "orders": orders_list})
         # 임팩트 동기화(옵션)
-        call_impact_sync({"type": "order", "member": member_name, "orders": orders_list, "source": "sheet_gpt"})
+        # call_impact_sync({"type": "order", "member": member_name, "orders": orders_list, "source": "sheet_gpt"})
         return jsonify({"status": "success", "회원명": member_name, "추출된_JSON": orders_list, "저장_결과": saved}), 200
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
+
+
 
 def handle_order_save(one_row: dict):
     ws = get_ws("제품주문")
@@ -983,6 +995,9 @@ def handle_order_save(one_row: dict):
     ]
     ws.insert_row(row, index=2)
 
+
+
+
 @app.route("/parse_and_save_order", methods=["POST"])
 def parse_and_save_order():
     try:
@@ -990,11 +1005,14 @@ def parse_and_save_order():
         parsed = parse_order_text_rule(user_input)
         handle_order_save(parsed)
         # 임팩트 동기화(옵션)
-        call_impact_sync({"type": "order", "member": parsed.get("회원명", ""), "orders": [parsed], "source": "sheet_gpt"})
+        # call_impact_sync({"type": "order", "member": parsed.get("회원명", ""), "orders": [parsed], "source": "sheet_gpt"})
         return jsonify({"status": "success", "message": f"{parsed.get('회원명','')}님의 주문이 저장되었습니다.", "parsed": parsed}), 200
     except Exception as e:
         traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+
 
 # 최근 주문 5건 보여주고 삭제 유도
 @app.route("/delete_order_request", methods=["POST"])
@@ -1028,6 +1046,9 @@ def delete_order_request():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+
+
+
 @app.route("/delete_order_confirm", methods=["POST"])
 def delete_order_confirm():
     try:
@@ -1056,6 +1077,16 @@ def delete_order_confirm():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+
+
+
+
+
+
+
+
+
+
 # ======================================================================================
 # 헬스체크 & 디버그
 # ======================================================================================
@@ -1067,10 +1098,17 @@ def debug_intent_route():
     return jsonify({"ok": True, "intent": intent, "raw_text": text})
 
 
+
+
+
+
+
+
+
+
 # -------------------- 실행 --------------------
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000, debug=True, use_reloader=False)
-
 
 
