@@ -3,7 +3,7 @@ from pathlib import Path
 # 사용자 계정 정의
 users = [
     {"host": "github-boraminfo",    "identity": "id_ed25519_boraminfo"},
-    {"host": "github-ehlhappyday",  "identity": "id_ed25519_ehlhappyday"},
+    {"host": "github-acareglc",  "identity": "id_ed25519_acareglc"},
     {"host": "github-iamsohappy0418",    "identity": "id_ed25519_iamsohappy0418"},
     {"host": "github-boraminfo",   "identity": "id_ed25519_boraminfo"},
 ]
