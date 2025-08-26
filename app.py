@@ -1034,6 +1034,66 @@ def add_counseling():
 
 
 
+
+
+
+
+
+
+
+
+
+def extract_order_fields_from_text(text):
+    result = {
+        "제품명": "",
+        "제품가격": 0,
+        "PV": 0,
+        "결재방법": "",
+        "주문자_고객명": "",
+        "주문자_휴대폰번호": "",
+        "배송처": ""
+    }
+
+    # 제품명
+    match = re.search(r"제품주문[^\w가-힣]*(\S+)", text)
+    if match:
+        result["제품명"] = match.group(1)
+
+    # 가격
+    price_match = re.search(r"(\d{3,6})[원\s]*[,]", text)
+    if price_match:
+        result["제품가격"] = int(price_match.group(1).replace(",", ""))
+
+    # PV
+    pv_match = re.search(r"(\d{4,6})\s*pv", text, re.IGNORECASE)
+    if pv_match:
+        result["PV"] = int(pv_match.group(1))
+
+    # 결제방법
+    if "카드" in text:
+        result["결재방법"] = "카드"
+    elif "현금" in text:
+        result["결재방법"] = "현금"
+    elif "계좌" in text:
+        result["결재방법"] = "계좌"
+
+    # 소비자 이름 및 전화번호
+    cust_match = re.search(r"소비자\s*([가-힣]{2,4})\((010[^\)]{7,8})\)", text)
+    if cust_match:
+        result["주문자_고객명"] = cust_match.group(1)
+        result["주문자_휴대폰번호"] = cust_match.group(2)
+
+    # 배송처: '센터' 또는 '주소:' 포함
+    if "센터" in text:
+        result["배송처"] = "센터"
+    else:
+        addr_match = re.search(r"주소[:：]?\s*(.+?)([,]|$)", text)
+        if addr_match:
+            result["배송처"] = addr_match.group(1).strip()
+
+    return result
+
+
     
 
             
@@ -1041,6 +1101,13 @@ def add_counseling():
     
     
 
+# 제품주문 내용 포함 시 자동 저장
+if "제품주문" in 요청문:
+    parsed_order = extract_order_fields_from_text(요청문)
+    parsed_order["회원명"] = member_name  # 상담일지 작성자 기준
+    parsed_order["주문일자"] = now_kst().strftime("%Y-%m-%d")
+    handle_order_save(parsed_order)
+    print(f"[제품주문 저장] {parsed_order}")
 
 
 
