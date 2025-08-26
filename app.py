@@ -15,6 +15,7 @@ from collections import Counter
 from oauth2client.service_account import ServiceAccountCredentials
 
 # 잘 동작
+# 멋짐
 
 
 import requests
