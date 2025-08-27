@@ -10,7 +10,16 @@ from openai import OpenAI
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
+<<<<<<< HEAD
 from datetime import datetime, timedelta, timezone
+=======
+# 잘 동작
+# 멋짐
+# 작동됨
+# 잘 됨
+# 잘 작동
+
+>>>>>>> 2d0c21e91b2d919553e9a720735cb83f3bf67945
 
 import pandas as pd
 import pytz
