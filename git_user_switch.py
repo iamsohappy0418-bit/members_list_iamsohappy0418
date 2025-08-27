@@ -33,7 +33,7 @@ def select_user():
         },
         "4": {
             "name": "boraminfo",
-            "email": "boraminfo2@gmail.com",
+            "email": "boraminfo@gmail.com",
             "remote": "git@github-boraminfo:boraminfo/memberslist.git",
             "host": "github-boraminfo"
         }
@@ -58,8 +58,8 @@ def get_current_branch():
 def main():
     user = select_user()
 
-    # ✅ SSH config 경로 지정
-    ssh_config_path = Path(__file__).parent / "set_git_user" / "ssh_config"
+    # ✅ SSH config 고정 (C:/ChatGPT/ssh_config)
+    ssh_config_path = Path("C:/ChatGPT/ssh_config")
     os.environ["GIT_SSH_COMMAND"] = f'ssh -F "{ssh_config_path}"'
 
     # ✅ Git 사용자 정보 설정
@@ -80,7 +80,7 @@ def main():
     print(f"✔️ branch:         {branch}")
     print(f"✔️ SSH config 사용: {ssh_config_path}")
 
-    # ✅ GitHub 연결 테스트 (자동 yes)
+    # ✅ GitHub 연결 테스트
     print("\n🌐 GitHub 연결 테스트 중...")
     try:
         result = subprocess.run(
@@ -98,5 +98,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-

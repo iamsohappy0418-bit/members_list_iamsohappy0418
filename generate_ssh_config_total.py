@@ -35,9 +35,8 @@ GIT_USERS = {
 }
 
 def generate_ssh_config() -> Path:
-    """프로젝트 루트 기준 set_git_user/ssh_config를 '덮어쓰기'로 생성"""
-    project_root = Path(__file__).parent
-    ssh_config_path = project_root / "set_git_user" / "ssh_config"
+    """C:/ChatGPT/ssh_config 파일을 덮어쓰기 생성"""
+    ssh_config_path = Path("C:/ChatGPT/ssh_config")
     ssh_config_path.parent.mkdir(parents=True, exist_ok=True)
 
     lines = []
@@ -74,29 +73,23 @@ def select_git_user() -> dict:
 
 def reset_and_set_remote(user: dict):
     """모든 remote 삭제 후 origin만 등록"""
-    # 현재 remote 목록 조회
     result = subprocess.run(["git", "remote"], capture_output=True, text=True)
     remotes = result.stdout.split()
 
-    # 기존 remote 삭제
     for r in remotes:
         if r.strip():
             subprocess.run(["git", "remote", "remove", r], check=False)
             print(f"🗑️ remote '{r}' 삭제")
 
-    # 새로운 origin 추가
     subprocess.run(["git", "remote", "add", "origin", user["remote"]], check=False)
     print(f"🔗 remote 'origin' 추가: {user['remote']}")
 
 def apply_git_settings(user: dict, ssh_config_path: Path):
-    # ssh -F 설정 (현재 프로세스 환경변수)
     os.environ["GIT_SSH_COMMAND"] = f'ssh -F "{ssh_config_path}"'
 
-    # git user.name / user.email (로컬)
     subprocess.run(["git", "config", "--local", "user.name", user["name"]], check=False)
     subprocess.run(["git", "config", "--local", "user.email", user["email"]], check=False)
 
-    # remote 재설정 (모두 삭제 후 origin 추가)
     reset_and_set_remote(user)
 
     print("\n✅ 설정 완료:")
@@ -105,7 +98,6 @@ def apply_git_settings(user: dict, ssh_config_path: Path):
     print(f"✔️ origin:          {user['remote']}")
     print(f"✔️ SSH config 사용: {ssh_config_path}")
 
-    # git remote -v 출력 (리모트 확인)
     print("\n📌 현재 등록된 git remote 목록:")
     subprocess.run(["git", "remote", "-v"])
 

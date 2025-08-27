@@ -1,6 +1,7 @@
 import os
 import subprocess
 from pathlib import Path
+from datetime import datetime
 
 USERS = {
     "1": {
@@ -29,6 +30,8 @@ USERS = {
     }
 }
 
+SSH_CONFIG_PATH = Path("C:/ChatGPT/ssh_config")
+
 def select_user():
     print("\n==============================")
     print("🔐 Git 사용자 계정을 선택하세요:")
@@ -46,18 +49,21 @@ def get_current_branch():
         )
         return result.stdout.strip()
     except subprocess.CalledProcessError:
-        return "unknown"
+        return "main"  # 기본값 main
 
 def setup_git(user):
-    ssh_config_path = Path(__file__).parent / "set_git_user" / "ssh_config"
-    os.environ["GIT_SSH_COMMAND"] = f'ssh -F "{ssh_config_path}"'
+    os.environ["GIT_SSH_COMMAND"] = f'ssh -F "{SSH_CONFIG_PATH}"'
 
+    # Git 사용자 정보 적용
     subprocess.run(["git", "config", "--local", "user.name", user["name"]])
     subprocess.run(["git", "config", "--local", "user.email", user["email"]])
-    subprocess.run(["git", "remote", "set-url", "origin", user["remote"]])
+
+    # 항상 origin 새로 등록
+    subprocess.run(["git", "remote", "remove", "origin"], check=False)
+    subprocess.run(["git", "remote", "add", "origin", user["remote"]], check=True)
 
     branch = get_current_branch()
-    print(f"\n✅ [{user['name']}] 설정 완료 (branch:{branch})")
+    print(f"\n✅ [{user['name']}] 설정 완료 (origin={user['remote']}, branch={branch})")
     return branch
 
 def show_changes():
@@ -74,15 +80,20 @@ def git_commit_and_push(branch):
     if not show_changes():
         return
 
-    commit_msg = input("\n💬 커밋 메시지를 입력하세요: ").strip()
+    commit_msg = input("\n💬 커밋 메시지를 입력하세요 (비우면 자동 메시지 사용): ").strip()
     if not commit_msg:
-        print("❌ 커밋 메시지가 비어있습니다.")
-        return
+        commit_msg = f"자동 커밋 {datetime.now().strftime('%Y-%m-%d %H:%M')}"
 
     subprocess.run(["git", "add", "."])
     subprocess.run(["git", "commit", "-m", commit_msg])
-    subprocess.run(["git", "pull", "origin", branch])
-    subprocess.run(["git", "push", "origin", branch])
+
+    print("\n📥 pull 실행 중...")
+    result = subprocess.run(["git", "pull", "origin", branch])
+    if result.returncode != 0:
+        print("⚠️ pull 과정에서 충돌이 발생했습니다. 수동으로 해결 후 다시 실행하세요.")
+        return
+
+    subprocess.run(["git", "push", "origin", branch, "--force"])  # 강제 push
     print("\n🚀 Push 완료!")
 
 def main():
@@ -95,5 +106,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
