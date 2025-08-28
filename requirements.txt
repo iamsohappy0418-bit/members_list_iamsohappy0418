@@ -53,3 +53,21 @@ Werkzeug==3.1.3
 google-api-python-client
 
 
+flask
+gspread
+oauth2client
+pandas
+reportlab
+requests
+python-dotenv
+pillow
+
+flask
+gspread
+oauth2client
+pandas
+reportlab
+requests
+python-dotenv
+pillow
+pytz
