@@ -121,6 +121,10 @@ from parser.field_map import field_map
 
 
 
+
+
+
+
 # ✅ Flask 초기화
 app = Flask(__name__)
 CORS(app)  # ← 추가
@@ -157,20 +161,25 @@ def home():
 
 @app.route("/debug_sheets", methods=["GET"])
 def debug_sheets():
-    """
-    시트 디버그 API
-    📌 설명:
-    연결된 Google Sheet의 워크시트 목록을 반환합니다.
-    📥 입력(JSON 예시):
-    {}
-    """
-
     try:
         sheet = get_sheet()
         sheet_names = [ws.title for ws in sheet.worksheets()]
-        return jsonify({"sheets": sheet_names}), 200
+
+        # ?sheet=DB 파라미터 있으면 해당 시트의 헤더 반환
+        target = request.args.get("sheet")
+        headers = []
+        if target:
+            ws = get_worksheet(target)
+            headers = ws.row_values(1)
+
+        return jsonify({
+            "sheets": sheet_names,
+            "headers": headers
+        }), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
 
     
 
@@ -200,26 +209,14 @@ def find_member_route():
     회원명 또는 회원번호를 기준으로 DB 시트에서 정보를 조회합니다.
     📥 입력(JSON 예시):
     {
-      "회원명": "신금자"
+    "회원명": "신금자"
     }
     """
 
     try:
-        raw = request.get_json() or {}
-
-        # 🔧 영문 키 → 한글 키 매핑
-        if "memberName" in raw:
-            raw["회원명"] = raw["memberName"]
-        if "name" in raw:
-            raw["회원명"] = raw["name"]
-        if "memberId" in raw:
-            raw["회원번호"] = raw["memberId"]
-        if "id" in raw:
-            raw["회원번호"] = raw["id"]
-
-        # ✅ 내부 표준 키만 사용
-        name = raw.get("회원명", "").strip()
-        number = raw.get("회원번호", "").strip()
+        data = request.get_json()
+        name = data.get("회원명", "").strip()
+        number = data.get("회원번호", "").strip()
 
         if not name and not number:
             return jsonify({"error": "회원명 또는 회원번호를 입력해야 합니다."}), 400
@@ -383,14 +380,14 @@ def update_member_route():
 # ======================================================================================
 @app.route('/save_member', methods=['POST'])
 def save_member():
+
     """
     회원 저장/수정 API
     📌 설명:
-    - 자연어 요청문을 파싱하여 회원을 신규 등록하거나 기존 회원 정보를 수정
-    - 등록 시 회원명, 회원번호, 휴대폰번호만 반영
+    자연어 요청문을 파싱하여 회원을 신규 등록하거나, 기존 회원 정보를 수정합니다.
     📥 입력(JSON 예시):
     {
-      "요청문": "홍길동 회원번호 12345 휴대폰 010-1111-2222"
+    "요청문": "홍길동 회원번호 12345 휴대폰 010-1111-2222 주소 서울"
     }
     """
 
@@ -402,10 +399,13 @@ def save_member():
         if not 요청문:
             return jsonify({"error": "입력 문장이 없습니다"}), 400
 
-        # ✅ 파싱 (회원명, 회원번호, 휴대폰번호만 추출)
-        name, number, phone = parse_registration(요청문)
+        # ✅ 파싱
+        name, number, phone, lineage = parse_registration(요청문)
         if not name:
             return jsonify({"error": "회원명을 추출할 수 없습니다"}), 400
+
+        # ✅ 주소 기본값 처리 (iPad 등 환경에서 누락 방지)
+        address = req.get("주소") or req.get("address", "")
 
         # ✅ 시트 접근
         sheet = get_member_sheet()
@@ -422,11 +422,16 @@ def save_member():
                     "회원명": name,
                     "회원번호": number,
                     "휴대폰번호": phone,
+                    "계보도": lineage,
+                    "주소": address
                 }.items():
                     if key in headers and value:
+
+
                         row_idx = i + 2
                         col_idx = headers.index(key) + 1
                         safe_update_cell(sheet, row_idx, col_idx, value, clear_first=True)
+
 
                 return jsonify({"message": f"{name} 기존 회원 정보 수정 완료"}), 200
 
@@ -437,6 +442,8 @@ def save_member():
             "회원명": name,
             "회원번호": number,
             "휴대폰번호": phone,
+            "계보도": lineage,
+            "주소": address
         }.items():
             if key in headers and value:
                 new_row[headers.index(key)] = value

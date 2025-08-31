@@ -110,12 +110,33 @@ def find_member_in_text(text: str) -> str | None:
     return None
 
 
-def find_member_internal(*args, **kwargs):
-    """
-    더미 함수: 내부 테스트용
-    TODO: 필요 시 실제 DB 조회 로직으로 구현
-    """
-    return []
+def find_member_internal(name: str = "", number: str = "") -> list[dict]:
+    sheet = get_member_sheet()
+    records = sheet.get_all_records()
+
+    results = []
+    name = (name or "").strip().lower()
+    number = (number or "").strip()
+
+    print(f"[DEBUG] 찾는 회원명: '{name}', 회원번호: '{number}'")
+
+    for row in records:
+        member_name = str(row.get("회원명", "")).strip().lower()
+        member_number = str(row.get("회원번호", "")).strip()
+        print(f"[DEBUG] 비교 대상 회원명: '{member_name}', 회원번호: '{member_number}'")
+
+        if name and name in member_name:
+            print(f"[MATCH] 이름 매칭됨 → {row}")
+            results.append(row)
+            continue
+
+        if number and number == member_number:
+            print(f"[MATCH] 번호 매칭됨 → {row}")
+            results.append(row)
+
+    return results
+
+
 
 
 def clean_member_data(data: dict) -> dict:
