@@ -1633,7 +1633,7 @@ def search_memo_from_text():
     text = (data.get("text") or "").strip()
     limit = int(data.get("limit", 20))
     offset = int(data.get("offset", 0))
-    detail = data.get("detail", False)  # 🔹 detail 여부
+    detail = data.get("detail", False)
 
     if not text:
         return jsonify({"error": "text가 비어 있습니다."}), 400
@@ -1671,7 +1671,7 @@ def search_memo_from_text():
             member_name = tokens[i]
             break
 
-    # ✅ 검색 키워드 추출
+    # ✅ 검색 키워드 추출 + clean_content 적용
     content_tokens = [t for t in tokens if t != member_name]
     raw_content = " ".join(content_tokens).strip()
     search_content = clean_content(raw_content, member_name)
@@ -1679,7 +1679,7 @@ def search_memo_from_text():
     if not search_content:
         return jsonify({"error": "검색할 내용이 없습니다."}), 400
 
-    keywords = search_content.split() if isinstance(search_content, str) else search_content
+    keywords = search_content.split()
 
     # ✅ 전체 시트 검색
     all_results = []
@@ -1737,17 +1737,16 @@ def search_memo_from_text():
             "member_name": member_name,
             "search_mode": search_mode,
             "keywords": keywords,
-            "results": grouped,  # 🔹 JSON 전체 반환
+            "results": grouped,
             "has_more": any(len(v) > limit for v in grouped.values())
         }), 200
     else:
         return jsonify({
             "status": "success",
             "keywords": keywords,
-            "formatted_text": response_text,  # 🔹 텍스트 버전
+            "formatted_text": response_text,
             "has_more": any(len(v) > limit for v in grouped.values())
         }), 200
-
 
 
 

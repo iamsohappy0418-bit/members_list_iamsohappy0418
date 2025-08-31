@@ -124,19 +124,25 @@ def search_memo_core(sheet_name, keywords, search_mode="any", member_name=None, 
     rows = sheet.get_all_records()
 
     for row in rows:
-        content = row.get("내용", "").strip().lower()
+        # ✅ 1. 본문 clean 처리
+        content = clean_content(row.get("내용", ""), member_name).lower()
         member = row.get("회원명", "").strip()
 
-        # ✅ 1. 작성자 일치 필터
-        if member_name and author != member_name:
+        # ✅ 2. 작성자 필터
+        if member_name and member != member_name:
             continue
 
-        # ✅ 2. 키워드/회원명 포함 여부
-        if not is_match(content, keywords, member_name, search_mode):
+        # ✅ 3. 키워드 clean 처리
+        clean_keywords = [clean_content(k, member_name).lower() for k in keywords if k]
+
+        # ✅ 4. 키워드 매칭
+        if not is_match(content, clean_keywords, member_name, search_mode):
             continue
 
         results.append(row)
 
+        if len(results) >= limit:
+            break
 
     return results
 
