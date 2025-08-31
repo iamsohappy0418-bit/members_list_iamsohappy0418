@@ -143,18 +143,6 @@ def search_memo_core(sheet_name, keywords, search_mode="any", member_name=None, 
 
 
 
-def is_match(content: str, keywords: list[str], member_name: str, mode: str) -> bool:
-    content = content.lower()
-
-    if mode == "동시검색":
-        required = keywords + ([member_name] if member_name else [])
-        return all(k.lower() in content for k in required)
-    else:
-        candidates = keywords + ([member_name] if member_name else [])
-        return any(k.lower() in content for k in candidates)
-
-
-
 
 
 

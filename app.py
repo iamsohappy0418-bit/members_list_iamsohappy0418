@@ -1433,21 +1433,85 @@ def add_counseling_route():
 # ======================================================================================
 @app.route("/search_memo", methods=["POST"])
 def search_memo():
-    return jsonify({
-        "status": "error",
-        "message": "🔧 현재 search_memo는 테스트 중이므로 일시 중지되었습니다."
-    }), 503
+    """
+    메모 고급 검색 API
+    📌 설명:
+    JSON 기반으로 상담/개인/활동 일지를 검색합니다.
+    📥 입력(JSON 예시):
+    {
+        "sheet": "상담일지",       # 상담일지 / 개인일지 / 활동일지 / 전체
+        "keywords": ["중국", "세미나"],
+        "search_mode": "any",    # any | 동시검색
+        "member_name": "이태수",
+        "start_date": "2023-01-01",
+        "end_date": "2023-12-31",
+        "limit": 20
+    }
+    """
+    try:
+        data = request.get_json(silent=True) or {}
 
+        sheet = data.get("sheet", "전체")
+        keywords = data.get("keywords", [])
+        search_mode = data.get("search_mode", "any")
+        member_name = data.get("member_name")
+        start_date = data.get("start_date")
+        end_date = data.get("end_date")
+        limit = int(data.get("limit", 20)) or 20  # 기본값 20
 
+        # ✅ 검색할 시트 결정
+        if sheet == "상담일지":
+            sheet_names = ["상담일지"]
+        elif sheet == "개인일지":
+            sheet_names = ["개인일지"]
+        elif sheet == "활동일지":
+            sheet_names = ["활동일지"]
+        else:
+            sheet_names = ["상담일지", "개인일지", "활동일지"]
 
+        all_results = []
+        for sheet_name in sheet_names:
+            partial = search_memo_core(
+                sheet_name=sheet_name,
+                keywords=keywords,
+                search_mode=search_mode,
+                member_name=member_name,
+                limit=limit
+            )
+            all_results.extend(partial)
 
+        # ✅ 정렬 (기본 최신순)
+        try:
+            all_results.sort(
+                key=lambda x: datetime.strptime(
+                    x.get("작성일자", "1900-01-01 00:00"),
+                    "%Y-%m-%d %H:%M"
+                ),
+                reverse=True
+            )
+        except Exception:
+            pass
 
+        has_more = len(all_results) > limit
+        results = all_results[:limit]
 
+        return jsonify({
+            "status": "success",
+            "sheets": sheet_names,
+            "keywords": keywords,
+            "search_mode": search_mode,
+            "member_name": member_name,
+            "limit": limit,
+            "results": results,
+            "has_more": has_more
+        }), 200
 
-
-# ======================================================================================
-# ✅ 자연어 검색 (사람 입력 “검색” 문장)
-# ======================================================================================
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
 
 
 
@@ -1551,16 +1615,14 @@ def search_memo_from_text():
 
     return jsonify({
         "status": "success",
-        "mode": sheet_names,
+        "sheets": sheet_names,   # ✅ mode → sheets 로 변경
         "member_name": member_name,
         "search_mode": search_mode,
         "keywords": keywords,
         "limit": limit,
-        "offset": offset,
-        "has_more": has_more,
-        "results": results
+        "results": results,
+        "has_more": len(all_results) > limit   # ✅ 추가
     }), 200
-
 
 
 
