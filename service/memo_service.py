@@ -125,7 +125,7 @@ def search_memo_core(sheet_name, keywords, search_mode="any", member_name=None, 
 
     for row in rows:
         content = row.get("내용", "").strip().lower()
-        author = row.get("작성자", "").strip()
+        member = row.get("회원명", "").strip()
 
         # ✅ 1. 작성자 일치 필터
         if member_name and author != member_name:
@@ -137,8 +137,6 @@ def search_memo_core(sheet_name, keywords, search_mode="any", member_name=None, 
 
         results.append(row)
 
-        if len(results) >= limit:
-            break
 
     return results
 

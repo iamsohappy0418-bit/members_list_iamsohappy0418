@@ -1448,127 +1448,12 @@ def search_memo():
 # ======================================================================================
 # ✅ 자연어 검색 (사람 입력 “검색” 문장)
 # ======================================================================================
-# ===== stdlib =====
-import os
-import io
-import re
-import base64
-import traceback
-from datetime import datetime, timedelta, timezone
-
-# ===== 3rd party =====
-import requests
-from flask import Flask, request, jsonify, Response
-from flask_cors import CORS
-
-# ===== project: config =====
-from config import (
-    API_URLS, HEADERS,
-    GOOGLE_SHEET_TITLE, SHEET_KEY,
-    OPENAI_API_KEY, OPENAI_API_URL, MEMBERSLIST_API_URL, openai_client,
-    SHEET_MAP,
-)
-
-# ===== project: utils =====
-from utils.common import (
-    now_kst,
-    process_order_date,
-    remove_josa,
-    remove_spaces,
-    split_to_parts,
-    parse_dt,      # ✅ 추가
-    is_match       # ✅ 추가
-)
-from utils.sheets import (
-    get_sheet,
-    get_worksheet,
-    get_member_sheet,
-    get_product_order_sheet,
-    get_commission_sheet,
-    append_row,
-    update_cell,
-    safe_update_cell,
-    delete_row,
-)
-from utils.clean_content import clean_content
-from utils.http import call_memberslist_add_orders, call_impact_sync
-from utils.openai_utils import (
-    extract_order_from_uploaded_image,
-    parse_order_from_text,
-)
-
-# ===== parser: member =====
-from parser import (
-    parse_registration,
-    parse_request_and_update,
-    parse_natural_query,
-    parse_deletion_request,
-    parse_order_text,
-    parse_memo,
-    parse_commission,
-    guess_intent,
-)
-
-from service.member_service import (
-    find_member_internal,
-    clean_member_data,
-    register_member_internal,
-)
-
-# ===== parser: order =====
-from parser.order_parser import (
-    parse_order_text,
-    parse_order_text_rule,
-    parse_order_from_text,
-)
-from service.order_service import (
-    addOrders,
-    handle_order_save,
-    handle_product_order,
-    find_order,
-    register_order,
-    update_order,
-    delete_order,
-    delete_order_by_row,
-    clean_order_data,
-    save_order_to_sheet,
-)
-
-# ===== parser: memo =====
-from parser.memo_parser import (
-    parse_memo,
-    parse_request_line,
-)
-from service.memo_service import (
-    save_memo,
-    find_memo,
-    search_in_sheet,
-    search_memo_core
-)
-
-# ===== parser: commission =====
-from parser.commission_parser import (
-    process_date,
-    clean_commission_data,
-)
-from service.commission_service import (
-    find_commission,
-    register_commission,
-    update_commission,
-    delete_commission,
-)
-
-# ===== parser: intent =====
-from parser.intent_parser import guess_intent
-
-# ===== field map =====
-from parser.field_map import field_map
 
 
 
-# ✅ Flask 초기화
-app = Flask(__name__)
-CORS(app)
+
+
+
 
 
 # ======================================================================================
@@ -1577,27 +1462,26 @@ CORS(app)
 @app.route("/search_memo_from_text", methods=["POST"])
 def search_memo_from_text():
     """
-    자연어 메모 검색 API
+    자연어 메모 검색 API (페이지네이션 지원)
     📌 설명:
     자연어 문장에서 키워드를 추출하여 상담/개인/활동 일지를 검색합니다.
     📥 입력(JSON 예시):
     {
-      "text": "이태수 개인일지 검색 자동차"
+      "text": "전체메모 검색 중국",
+      "limit": 20,
+      "offset": 0
     }
     """
 
     data = request.get_json(silent=True) or {}
     text = (data.get("text") or "").strip()
     limit = int(data.get("limit", 20))
+    offset = int(data.get("offset", 0))
 
     if not text:
         return jsonify({"error": "text가 비어 있습니다."}), 400
     if "검색" not in text:
         return jsonify({"error": "'검색' 키워드가 반드시 포함되어야 합니다."}), 400
-
-
-
-
 
     # ✅ 시트 모드 판별
     if "개인" in text:
@@ -1609,23 +1493,17 @@ def search_memo_from_text():
     else:
         sheet_names = ["상담일지", "개인일지", "활동일지"]
 
-
-
-
-
-
     # ✅ 검색 모드 판별
     search_mode = "동시검색" if ("동시" in text or "동시검색" in text) else "any"
 
     # ✅ 불필요한 단어 제거
     ignore = {
-        "검색", "해주세요", "내용", "다음", "에서", "메모", "동시", "동시검색",
-        "전체메모", "개인일지", "상담일지", "활동일지"  # ✅ "전체"는 제거하지 않음
+        "검색", "해주세요", "내용", "다음", "에서", "메모",
+        "동시", "동시검색", "전체메모", "개인일지", "상담일지", "활동일지"
     }
-
     tokens = [t for t in text.split() if t not in ignore]
 
-    # ✅ 회원명 추출 (명확한 패턴일 때만)
+    # ✅ 회원명 추출
     member_name = None
     for i in range(len(tokens) - 2):
         if (
@@ -1639,17 +1517,14 @@ def search_memo_from_text():
     # ✅ 검색 키워드 추출
     content_tokens = [t for t in tokens if t != member_name]
     raw_content = " ".join(content_tokens).strip()
-
     search_content = clean_content(raw_content, member_name)
-    print("✅ search_content type:", type(search_content), "| value:", search_content)
 
     if not search_content:
         return jsonify({"error": "검색할 내용이 없습니다."}), 400
 
     keywords = search_content.split() if isinstance(search_content, str) else search_content
-    print("🔍 keywords:", keywords)
 
-    # ✅ 시트 검색 수행
+    # ✅ 전체 시트 검색
     all_results = []
     for sheet_name in sheet_names:
         partial = search_memo_core(
@@ -1657,20 +1532,35 @@ def search_memo_from_text():
             keywords=keywords,
             search_mode=search_mode,
             member_name=member_name,
-            limit=limit
+            limit=9999  # 충분히 크게
         )
         all_results.extend(partial)
 
-        results = all_results[:limit]
+    # ✅ 최신순 정렬
+    try:
+        all_results.sort(
+            key=lambda x: datetime.strptime(x.get("작성일자", "1900-01-01 00:00"), "%Y-%m-%d %H:%M"),
+            reverse=True
+        )
+    except Exception:
+        pass
 
-        return jsonify({
-            "status": "success",
-            "mode": sheet_names,
-            "member_name": member_name,
-            "search_mode": search_mode,
-            "keywords": keywords,
-            "results": results
-        }), 200
+    # ✅ 페이지네이션 적용
+    results = all_results[offset:offset + limit]
+    has_more = offset + limit < len(all_results)
+
+    return jsonify({
+        "status": "success",
+        "mode": sheet_names,
+        "member_name": member_name,
+        "search_mode": search_mode,
+        "keywords": keywords,
+        "limit": limit,
+        "offset": offset,
+        "has_more": has_more,
+        "results": results
+    }), 200
+
 
 
 
