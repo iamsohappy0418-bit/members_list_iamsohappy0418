@@ -200,26 +200,26 @@ def find_member_route():
     회원명 또는 회원번호를 기준으로 DB 시트에서 정보를 조회합니다.
     📥 입력(JSON 예시):
     {
-    "회원명": "신금자"
+      "회원명": "신금자"
     }
     """
 
     try:
-        data = request.get_json()
-        name = (
-            data.get("회원명")
-            or data.get("memberName")
-            or data.get("name")
-            or ""
-        ).strip()
+        raw = request.get_json() or {}
 
-        number = (
-            data.get("회원번호")
-            or data.get("memberId")
-            or data.get("id")
-            or ""
-        ).strip()
+        # 🔧 영문 키 → 한글 키 매핑
+        if "memberName" in raw:
+            raw["회원명"] = raw["memberName"]
+        if "name" in raw:
+            raw["회원명"] = raw["name"]
+        if "memberId" in raw:
+            raw["회원번호"] = raw["memberId"]
+        if "id" in raw:
+            raw["회원번호"] = raw["id"]
 
+        # ✅ 내부 표준 키만 사용
+        name = raw.get("회원명", "").strip()
+        number = raw.get("회원번호", "").strip()
 
         if not name and not number:
             return jsonify({"error": "회원명 또는 회원번호를 입력해야 합니다."}), 400
@@ -234,6 +234,7 @@ def find_member_route():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 
     
