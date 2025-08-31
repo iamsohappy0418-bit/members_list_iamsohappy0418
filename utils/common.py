@@ -3,6 +3,7 @@ import re
 from datetime import datetime, timedelta, timezone
 import pytz
 from typing import Optional
+from datetime import datetime
 
 
 # ======================================================================================
@@ -119,6 +120,25 @@ def parse_dt(s: str):
         except ValueError:
             continue
     return None
+
+
+def is_match(content, keywords, member_name=None, search_mode="any"):
+    """
+    키워드 매칭 함수
+    - content: 메모 내용
+    - keywords: 검색할 키워드 리스트
+    - member_name: 선택적 회원명 (필터)
+    - search_mode: "any" → 하나라도 포함 / "동시검색" → 모두 포함
+    """
+    if not keywords:
+        return True  # 키워드 없으면 무조건 매칭
+
+    if search_mode == "any":
+        return any(kw in content for kw in keywords)
+    else:  # "동시검색"
+        return all(kw in content for kw in keywords)
+    
+
 
 
 def match_condition(text: str, keywords: list[str], mode: str = "any") -> bool:

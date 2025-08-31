@@ -2,6 +2,8 @@ import traceback
 from utils.sheets import get_counseling_sheet, get_personal_memo_sheet, get_activity_log_sheet
 from utils.common import now_kst, parse_dt, match_condition
 from utils.sheets import get_worksheet
+from datetime import timedelta
+from utils.common import parse_dt, is_match
 
 
 # ======================================================================================
@@ -114,7 +116,12 @@ def search_memo_core(sheet_name, keywords, search_mode="any", member_name=None, 
     - member_name: "이태수" 등
     """
     results = []
-    rows = load_sheet_data(sheet_name)  # 시트 불러오기
+    sheet = get_worksheet(sheet_name)
+    if not sheet:
+        print(f"[ERROR] ❌ 시트를 가져올 수 없습니다: {sheet_name}")
+        return []
+
+    rows = sheet.get_all_records()
 
     for row in rows:
         content = row.get("내용", "").strip().lower()
@@ -137,6 +144,7 @@ def search_memo_core(sheet_name, keywords, search_mode="any", member_name=None, 
 
 
 
+
 def is_match(content: str, keywords: list[str], member_name: str, mode: str) -> bool:
     content = content.lower()
 
@@ -146,6 +154,10 @@ def is_match(content: str, keywords: list[str], member_name: str, mode: str) -> 
     else:
         candidates = keywords + ([member_name] if member_name else [])
         return any(k.lower() in content for k in candidates)
+
+
+
+
 
 
 
