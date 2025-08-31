@@ -1530,26 +1530,21 @@ def search_memo():
 
 # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 # ======================================================================================
-# ✅ 자연어 검색 (사람 입력 “검색” 문장)
+# ✅ 자연어 검색 (사람 입력 “검색” 문장) ipad용
 # ======================================================================================
 @app.route("/search_memo_from_text", methods=["POST"])
 def search_memo_from_text():
     """
-    자연어 메모 검색 API (페이지네이션 지원)
+    자연어 메모 검색 API (페이지네이션 + 일지 분류 출력 + 순서 고정 + 텍스트/JSON 선택)
     📌 설명:
-    자연어 문장에서 키워드를 추출하여 상담/개인/활동 일지를 검색합니다.
-    📥 입력(JSON 예시):
-    {
-      "text": "전체메모 검색 중국",
-      "limit": 20,
-      "offset": 0
-    }
+    - 기본 출력: 사람이 읽기 좋은 텍스트 블록
+    - {"detail": true} 옵션 추가 시: JSON 상세 구조 반환
     """
-
     data = request.get_json(silent=True) or {}
     text = (data.get("text") or "").strip()
     limit = int(data.get("limit", 20))
     offset = int(data.get("offset", 0))
+    detail = data.get("detail", False)  # 🔹 detail 여부
 
     if not text:
         return jsonify({"error": "text가 비어 있습니다."}), 400
@@ -1605,33 +1600,64 @@ def search_memo_from_text():
             keywords=keywords,
             search_mode=search_mode,
             member_name=member_name,
-            limit=9999  # 충분히 크게
+            limit=9999
         )
+        for p in partial:
+            p["일지종류"] = sheet_name
         all_results.extend(partial)
 
     # ✅ 최신순 정렬
     try:
         all_results.sort(
-            key=lambda x: datetime.strptime(x.get("작성일자", "1900-01-01 00:00"), "%Y-%m-%d %H:%M"),
+            key=lambda x: datetime.strptime(
+                x.get("작성일자", "1900-01-01 00:00"), "%Y-%m-%d %H:%M"
+            ),
             reverse=True
         )
     except Exception:
         pass
 
+    # ✅ 일지별 그룹핑 (출력 순서 고정)
+    grouped = {"활동일지": [], "상담일지": [], "개인일지": []}
+    for item in all_results:
+        if item["일지종류"] in grouped:
+            grouped[item["일지종류"]].append(item)
+
     # ✅ 페이지네이션 적용
-    results = all_results[offset:offset + limit]
-    has_more = offset + limit < len(all_results)
+    for key in grouped:
+        grouped[key] = grouped[key][offset:offset + limit]
 
-    return jsonify({
-        "status": "success",
-        "sheets": sheet_names,   # ✅ mode → sheets 로 변경
-        "member_name": member_name,
-        "search_mode": search_mode,
-        "keywords": keywords,
-        "limit": limit,
-        "results": results,
-        "has_more": len(all_results) > limit   # ✅ 추가
-    }), 200
+    # ✅ 텍스트 블록 변환
+    icons = {"활동일지": "🗂", "상담일지": "📂", "개인일지": "📒"}
+    text_blocks = []
+    for sheet_name in ["활동일지", "상담일지", "개인일지"]:
+        entries = grouped.get(sheet_name, [])
+        if entries:
+            block = [f"{icons[sheet_name]} {sheet_name}"]
+            for e in entries:
+                line = f"· ({e.get('작성일자')}) {e.get('내용')} — {e.get('회원명')}"
+                block.append(line)
+            text_blocks.append("\n".join(block))
+    response_text = "\n\n".join(text_blocks)
+
+    # ✅ 분기 응답
+    if detail:
+        return jsonify({
+            "status": "success",
+            "sheets": sheet_names,
+            "member_name": member_name,
+            "search_mode": search_mode,
+            "keywords": keywords,
+            "results": grouped,  # 🔹 JSON 전체 반환
+            "has_more": any(len(v) > limit for v in grouped.values())
+        }), 200
+    else:
+        return jsonify({
+            "status": "success",
+            "keywords": keywords,
+            "formatted_text": response_text,  # 🔹 텍스트 버전
+            "has_more": any(len(v) > limit for v in grouped.values())
+        }), 200
 
 
 
@@ -1651,41 +1677,7 @@ def search_memo_from_text():
 
 
 
-# 조회 (회원명 + 일지종류 전부 불러오기)
-# ======================================================================================
-# ✅ 일지 조회 (회원 + 일지종류)
-# ======================================================================================
-@app.route("/find_memo", methods=["POST"])
-def find_memo_route():
-    """
-    일지 조회 API
-    📌 설명:
-    회원명과 일지 종류(개인/상담/활동)를 기준으로 일지 내용을 조회합니다.
-    📥 입력(JSON 예시):
-    {
-    "일지종류": "개인일지",
-    "회원명": "홍길동"
-    }
-    """
 
-    try:
-        data = request.get_json()
-        sheet_name = data.get("일지종류", "").strip()
-        member = data.get("회원명", "").strip()
-
-        if not sheet_name or not member:
-            return jsonify({"error": "일지종류와 회원명은 필수 입력 항목입니다."}), 400
-
-        matched = find_memo(sheet_name, member)
-        if not matched:
-            return jsonify({"error": "해당 일지를 찾을 수 없습니다."}), 404
-
-        return jsonify(matched), 200
-
-    except ValueError as ve:
-        return jsonify({"error": str(ve)}), 400
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 
 
 
@@ -1882,7 +1874,6 @@ def delete_commission_route():
 
 
 
-
 # ======================================================================================
 # ✅ 주문 조회 (JSON 전용)
 # ======================================================================================
@@ -1926,22 +1917,33 @@ def search_order_by_nl():
     """
     주문 자연어 검색 API (자연어 전용)
     📌 설명:
-    자연어 문장에서 회원명, 제품명 등을 추출하여 주문을 조회합니다.
+    자연어 문장에서 회원명, 제품명 등을 추출하여 주문 내역을 조회합니다.
     📥 입력(JSON 예시):
     {
       "query": "김상민 헤모힘 주문 조회"
     }
     """
-    data = request.get_json()
-    query = data.get("query")
-    if not query:
-        return Response("query 파라미터가 필요합니다.", status=400)
+    try:
+        data = request.get_json()
+        query = data.get("query")
+        if not query:
+            return Response("query 파라미터가 필요합니다.", status=400)
 
-    parsed = parse_order_text(query)
-    if not parsed:
-        return Response("자연어에서 주문 정보를 추출할 수 없습니다.", status=400)
+        parsed = parse_order_text(query)
+        if not parsed:
+            return Response("자연어에서 주문 정보를 추출할 수 없습니다.", status=400)
 
-    return jsonify(find_order(parsed.get("회원명", ""), parsed.get("제품명", "")))
+        member = parsed.get("회원명", "")
+        product = parsed.get("제품명", "")
+
+        matched = find_order(member, product)
+        if not matched:
+            return jsonify({"error": "해당 주문을 찾을 수 없습니다."}), 404
+
+        return jsonify([clean_order_data(o) for o in matched]), 200
+
+    except Exception as e:
+        return Response(f"[서버 오류] {str(e)}", status=500)
 
 
 # ======================================================================================
@@ -1957,16 +1959,29 @@ def order_find_auto():
     """
     data = request.get_json(silent=True) or {}
 
+    # ✅ 자연어 기반
     if "query" in data or "text" in data:
         return search_order_by_nl()
 
+    # ✅ JSON 기반
     if "회원명" in data or "제품명" in data:
         return find_order_route()
 
+    # ✅ 단일 문자열만 전달된 경우
     if isinstance(data, str) and data.strip():
         return search_order_by_nl()
 
-    return jsonify({"status": "error", "message": "❌ 올바른 입력이 필요합니다."}), 400
+    return jsonify({
+        "status": "error",
+        "message": "❌ 입력이 올바르지 않습니다. "
+                   "자연어는 'query/text/단일문자열', "
+                   "JSON은 '회원명/제품명'을 포함해야 합니다."
+    }), 400
+
+
+
+
+
 
 
 
@@ -2015,13 +2030,22 @@ def find_commission_route():
     후원수당 조회 API (JSON 전용)
     📌 설명:
     회원명을 기준으로 후원수당 데이터를 조회합니다.
+    📥 입력(JSON 예시):
+    {
+      "회원명": "홍길동"
+    }
     """
-    data = request.get_json()
-    member = data.get("회원명", "").strip()
-    if not member:
-        return jsonify({"status": "error", "error": "회원명이 필요합니다."}), 400
+    try:
+        data = request.get_json()
+        member = data.get("회원명", "").strip()
+        if not member:
+            return jsonify({"status": "error", "error": "회원명이 필요합니다."}), 400
 
-    return jsonify(find_commission({"회원명": member}))
+        results = find_commission({"회원명": member})
+        return jsonify({"status": "success", "results": results}), 200
+
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e)}), 500
 
 
 # ======================================================================================
@@ -2033,14 +2057,27 @@ def search_commission_by_nl():
     후원수당 자연어 검색 API (자연어 전용)
     📌 설명:
     자연어 문장에서 회원명을 추출하여 후원수당을 조회합니다.
+    📥 입력(JSON 예시):
+    {
+      "query": "홍길동 후원수당 조회"
+    }
     """
-    data = request.get_json()
-    query = data.get("query")
-    if not query:
-        return Response("query 파라미터가 필요합니다.", status=400)
+    try:
+        data = request.get_json()
+        query = data.get("query")
+        if not query:
+            return Response("query 파라미터가 필요합니다.", status=400)
 
-    parsed = parse_commission(query)
-    return jsonify(find_commission({"회원명": parsed.get("회원명", "")}))
+        parsed = parse_commission(query)
+        member = parsed.get("회원명", "")
+        if not member:
+            return Response("자연어에서 회원명을 추출할 수 없습니다.", status=400)
+
+        results = find_commission({"회원명": member})
+        return jsonify({"status": "success", "results": results}), 200
+
+    except Exception as e:
+        return Response(f"[서버 오류] {str(e)}", status=500)
 
 
 # ======================================================================================
@@ -2056,28 +2093,24 @@ def commission_find_auto():
     """
     data = request.get_json(silent=True) or {}
 
+    # ✅ 자연어 기반
     if "query" in data or "text" in data:
         return search_commission_by_nl()
 
+    # ✅ JSON 기반
     if "회원명" in data:
         return find_commission_route()
 
+    # ✅ 단일 문자열만 전달된 경우
     if isinstance(data, str) and data.strip():
         return search_commission_by_nl()
 
-    return jsonify({"status": "error", "message": "❌ 올바른 입력이 필요합니다."}), 400
-
-
-
-
-
-
-
-
-
-
-
-
+    return jsonify({
+        "status": "error",
+        "message": "❌ 입력이 올바르지 않습니다. "
+                   "자연어는 'query/text/단일문자열', "
+                   "JSON은 '회원명'을 포함해야 합니다."
+    }), 400
 
 
 
