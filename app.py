@@ -96,7 +96,7 @@ from service.memo_service import (
     save_memo,
     find_memo,
     search_in_sheet,
-    # ⚠ search_memo_core → 구현 필요 (현재 없음)
+    search_memo_core 
 )
 
 # ===== parser: commission =====
@@ -1509,7 +1509,7 @@ def search_memo_from_text():
     자연어 문장에서 키워드를 추출하여 상담/개인/활동 일지를 검색합니다.
     📥 입력(JSON 예시):
     {
-    "text": "이태수 개인일지 검색 자동차"
+      "text": "이태수 개인일지 검색 자동차"
     }
     """
 
@@ -1522,39 +1522,61 @@ def search_memo_from_text():
     if "검색" not in text:
         return jsonify({"error": "'검색' 키워드가 반드시 포함되어야 합니다."}), 400
 
-    if "개인" in text: sheet_mode = "개인"
-    elif "상담" in text: sheet_mode = "상담"
-    elif "활동" in text: sheet_mode = "활동"
-    else: sheet_mode = "전체"
+    # ✅ 시트 모드 판별
+    if "개인" in text: 
+        sheet_name = "개인일지"
+    elif "상담" in text: 
+        sheet_name = "상담일지"
+    elif "활동" in text: 
+        sheet_name = "활동일지"
+    else: 
+        sheet_name = "전체"
 
-    search_mode = "AND" if ("동시" in text or "동시검색" in text) else "OR"
+    # ✅ 검색 모드 판별
+    search_mode = "동시검색" if ("동시" in text or "동시검색" in text) else "any"
 
+    # ✅ 불필요한 토큰 제거
     ignore = {"검색","해줘","해주세요","내용","다음","에서","메모","동시","동시검색"}
     tokens = [t for t in text.split() if t not in ignore]
 
+    # ✅ 회원명 후보 추출 (한글 이름 패턴)
     member_name = None
     for t in tokens:
         if re.match(r"^[가-힣]{2,10}$", t):
             member_name = t
             break
 
-    content_tokens = [t for t in tokens if t != member_name and not any(x in t for x in ["개인","상담","활동","전체"])]
+    # ✅ 검색 키워드 추출
+    content_tokens = [
+        t for t in tokens 
+        if t != member_name and not any(x in t for x in ["개인","상담","활동","전체"])
+    ]
     raw_content = " ".join(content_tokens).strip()
     search_content = clean_content(raw_content, member_name)
 
     if not search_content:
         return jsonify({"error": "검색할 내용이 없습니다."}), 400
 
-    results = search_memo_core(sheet_mode, search_content, search_mode, member_name, limit)
+    # ✅ 리스트로 변환
+    keywords = search_content.split() if isinstance(search_content, str) else search_content
+
+    # ✅ 실제 검색 실행
+    results = search_memo_core(
+        sheet_name=sheet_name,
+        keywords=keywords,
+        search_mode=search_mode,
+        limit=limit
+    )
 
     return jsonify({
         "status": "success",
-        "mode": sheet_mode,
+        "mode": sheet_name,
         "member_name": member_name,
         "search_mode": search_mode,
-        "content": search_content,
+        "keywords": keywords,
         "results": results
     }), 200
+
 
 
 
