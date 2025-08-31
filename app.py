@@ -47,6 +47,9 @@ from utils.openai_utils import (
     parse_order_from_text,
 )
 
+from utils import format_memo_results
+
+
 # ===== parser: member =====
 # ===== parser =====
 from parser import (
@@ -1425,6 +1428,53 @@ def add_counseling_route():
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
+
+
+
+
+
+
+
+# ======================================================================================
+# ✅ 자동 분기 (iPad = 자연어 / PC = JSON)
+# ======================================================================================
+@app.route("/search_memo_auto", methods=["POST"])
+def search_memo_auto():
+    """
+    자동 메모 검색 API
+    📌 설명:
+    - iPad(자연어 입력): { "text": "이태수 상담일지 검색 자동차" }
+    - PC(JSON 입력): {
+        "sheet": "상담일지",
+        "keywords": ["자동차"],
+        "search_mode": "any",
+        "member_name": "이태수",
+        "limit": 20
+      }
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+
+        if "text" in data:  
+            # ✅ iPad → 자연어 기반 검색
+            return search_memo_from_text()
+        elif "keywords" in data or "sheet" in data:
+            # ✅ PC → JSON 기반 검색
+            return search_memo()
+        else:
+            return jsonify({
+                "status": "error",
+                "message": "❌ 입력이 올바르지 않습니다. 'text' 또는 'keywords'를 포함해야 합니다."
+            }), 400
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+    
 
 
 
