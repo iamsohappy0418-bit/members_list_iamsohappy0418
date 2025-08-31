@@ -105,40 +105,49 @@ def search_in_sheet(sheet_name, keywords, search_mode="any",
 # ======================================================================================
 # ✅ 통합 검색 (Core)
 # ======================================================================================
-def search_memo_core(sheet_name: str, keywords: list[str], search_mode: str = "any",
-                     start_date=None, end_date=None, limit: int = 20) -> dict:
+def search_memo_core(sheet_name, keywords, search_mode="any", member_name=None, limit=20):
     """
-    메모 검색 통합 함수
-    - sheet_name: "상담일지" / "개인일지" / "활동일지"
-    - keywords: 검색 키워드 리스트
-    - search_mode: "any"(기본), "all"
-    - start_date, end_date: 날짜 범위 (datetime.date or datetime)
-    - limit: 결과 제한 개수
+    시트에서 메모를 검색하는 핵심 함수
+    - sheet_name: "상담일지", "개인일지", "활동일지"
+    - keywords: ["중국", "세미나"]
+    - search_mode: "동시검색" 또는 "any"
+    - member_name: "이태수" 등
     """
-    try:
-        if not sheet_name:
-            return {"status": "error", "message": "시트명이 지정되지 않았습니다."}
-        if not keywords:
-            return {"status": "error", "message": "검색 키워드가 없습니다."}
+    results = []
+    rows = load_sheet_data(sheet_name)  # 시트 불러오기
 
-        results, has_more = search_in_sheet(
-            sheet_name=sheet_name,
-            keywords=keywords,
-            search_mode=search_mode,
-            start_date=start_date,
-            end_date=end_date,
-            limit=limit
-        )
+    for row in rows:
+        content = row.get("내용", "").strip().lower()
+        author = row.get("작성자", "").strip()
 
-        return {
-            "status": "success",
-            "sheet": sheet_name,
-            "count": len(results),
-            "has_more": has_more,
-            "results": results
-        }
-    except Exception as e:
-        traceback.print_exc()
-        return {"status": "error", "message": str(e)}
+        # ✅ 1. 작성자 일치 필터
+        if member_name and author != member_name:
+            continue
+
+        # ✅ 2. 키워드/회원명 포함 여부
+        if not is_match(content, keywords, member_name, search_mode):
+            continue
+
+        results.append(row)
+
+        if len(results) >= limit:
+            break
+
+    return results
+
+
+
+def is_match(content: str, keywords: list[str], member_name: str, mode: str) -> bool:
+    content = content.lower()
+
+    if mode == "동시검색":
+        required = keywords + ([member_name] if member_name else [])
+        return all(k.lower() in content for k in required)
+    else:
+        candidates = keywords + ([member_name] if member_name else [])
+        return any(k.lower() in content for k in candidates)
+
+
+
 
 

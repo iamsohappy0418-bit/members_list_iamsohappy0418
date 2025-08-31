@@ -1431,66 +1431,11 @@ def add_counseling_route():
 # ======================================================================================
 @app.route("/search_memo", methods=["POST"])
 def search_memo():
-    """
-    메모 검색 API
-    📌 설명:
-    키워드 및 검색 조건을 기반으로 상담/개인/활동 일지에서 검색합니다.
-    📥 입력(JSON 예시):
-    {
-    "keywords": ["중국", "공항"],
-    "mode": "전체",
-    "search_mode": "동시검색",
-    "limit": 10
-    }
-    """
+    return jsonify({
+        "status": "error",
+        "message": "🔧 현재 search_memo는 테스트 중이므로 일시 중지되었습니다."
+    }), 503
 
-    data = request.get_json(silent=True) or {}
-
-    keywords = data.get("keywords", [])
-    mode = data.get("mode", "전체")
-    search_mode = data.get("search_mode", "any")
-    limit = int(data.get("limit", 20))
-
-    start_dt = parse_date_yyyymmdd(data.get("start_date")) if data.get("start_date") else None
-    end_dt = parse_date_yyyymmdd(data.get("end_date")) if data.get("end_date") else None
-
-    if not isinstance(keywords, list) or not keywords:
-        return jsonify({"error": "keywords는 비어있지 않은 리스트여야 합니다."}), 400
-
-    results, more_map = {}, {}
-
-    try:
-        if mode == "전체":
-            for m, sheet_name in SHEET_MAP.items():
-                r, more = search_in_sheet(sheet_name, keywords, search_mode, start_dt, end_dt, limit)
-                results[m] = r
-                if more: more_map[m] = True
-        else:
-            sheet_name = SHEET_MAP.get(mode)
-            if not sheet_name:
-                return jsonify({"error": f"잘못된 mode 값입니다: {mode}"}), 400
-            r, more = search_in_sheet(sheet_name, keywords, search_mode, start_dt, end_dt, limit)
-            results[mode] = r
-            if more: more_map[mode] = True
-
-        resp = {
-            "status": "success",
-            "search_params": {
-                "keywords": keywords,
-                "mode": mode,
-                "search_mode": search_mode,
-                "start_date": data.get("start_date"),
-                "end_date": data.get("end_date"),
-                "limit": limit
-            },
-            "results": results
-        }
-        if more_map:
-            resp["more_results"] = {k: "더 많은 결과가 있습니다." for k in more_map}
-        return jsonify(resp), 200
-    except Exception as e:
-        import traceback; traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
 
 
 
@@ -1503,43 +1448,40 @@ def search_memo():
 # ======================================================================================
 @app.route("/search_memo_from_text", methods=["POST"])
 def search_memo_from_text():
-    """
-    자연어 메모 검색 API
-    📌 설명:
-    자연어 문장에서 키워드를 추출하여 상담/개인/활동 일지를 검색합니다.
-    📥 입력(JSON 예시):
-    {
-      "text": "이태수 개인일지 검색 자동차"
-    }
-    """
-
     data = request.get_json(silent=True) or {}
     text = (data.get("text") or "").strip()
     limit = int(data.get("limit", 20))
 
     if not text:
         return jsonify({"error": "text가 비어 있습니다."}), 400
+
+    # ✅ "검색" 키워드 필수
     if "검색" not in text:
         return jsonify({"error": "'검색' 키워드가 반드시 포함되어야 합니다."}), 400
 
-    # ✅ 시트 모드 판별
-    if "개인" in text: 
-        sheet_name = "개인일지"
-    elif "상담" in text: 
-        sheet_name = "상담일지"
-    elif "활동" in text: 
-        sheet_name = "활동일지"
-    else: 
-        sheet_name = "전체"
+    # ✅ 시트명 판별
+    if "전체메모" in text or "전체 메모" in text:
+        sheet_names = ["상담일지", "개인일지", "활동일지"]
+    elif "개인일지" in text:
+        sheet_names = ["개인일지"]
+    elif "상담일지" in text:
+        sheet_names = ["상담일지"]
+    elif "활동일지" in text:
+        sheet_names = ["활동일지"]
+    else:
+        return jsonify({"error": "'개인일지', '상담일지', '활동일지', '전체메모' 중 하나가 포함되어야 합니다."}), 400
 
     # ✅ 검색 모드 판별
-    search_mode = "동시검색" if ("동시" in text or "동시검색" in text) else "any"
+    search_mode = "동시검색" if "동시" in text else "any"
 
-    # ✅ 불필요한 토큰 제거
-    ignore = {"검색","해줘","해주세요","내용","다음","에서","메모","동시","동시검색"}
+    # ✅ 불필요한 단어 제거
+    ignore = {
+        "검색", "해주세요", "내용", "다음", "에서", "메모", "동시", "동시검색",
+        "전체메모", "전체", "개인일지", "상담일지", "활동일지"
+    }
     tokens = [t for t in text.split() if t not in ignore]
 
-    # ✅ 회원명 후보 추출 (한글 이름 패턴)
+    # ✅ 회원명 추출
     member_name = None
     for t in tokens:
         if re.match(r"^[가-힣]{2,10}$", t):
@@ -1547,35 +1489,38 @@ def search_memo_from_text():
             break
 
     # ✅ 검색 키워드 추출
-    content_tokens = [
-        t for t in tokens 
-        if t != member_name and not any(x in t for x in ["개인","상담","활동","전체"])
-    ]
+    content_tokens = [t for t in tokens if t != member_name]
     raw_content = " ".join(content_tokens).strip()
     search_content = clean_content(raw_content, member_name)
 
     if not search_content:
         return jsonify({"error": "검색할 내용이 없습니다."}), 400
 
-    # ✅ 리스트로 변환
     keywords = search_content.split() if isinstance(search_content, str) else search_content
 
-    # ✅ 실제 검색 실행
-    results = search_memo_core(
-        sheet_name=sheet_name,
-        keywords=keywords,
-        search_mode=search_mode,
-        limit=limit
-    )
+    # ✅ 시트별 검색 수행
+    results = {}
+    for sheet in sheet_names:
+        results[sheet] = search_memo_core(
+            sheet_name=sheet,
+            keywords=keywords,
+            search_mode=search_mode,
+            member_name=member_name,
+            limit=limit
+        )
 
     return jsonify({
         "status": "success",
-        "mode": sheet_name,
+        "mode": sheet_names,
         "member_name": member_name,
         "search_mode": search_mode,
         "keywords": keywords,
         "results": results
     }), 200
+
+
+
+
 
 
 
