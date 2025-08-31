@@ -1352,39 +1352,128 @@ def delete_order_request():
 # ======================================================================================
 # ✅ 저장 (상담/개인/활동일지)
 # ======================================================================================
+
+
+
+# @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+# ======================================================================================
+# JSON 전용 메모 저장
+# ======================================================================================
+@app.route("/save_memo", methods=["POST"])
+def save_memo_route():
+    """
+    일지 저장 API (JSON 전용)
+    📌 설명:
+    회원명과 일지 종류, 내용을 JSON 입력으로 받아 시트에 저장합니다.
+    📥 입력(JSON 예시):
+    {
+      "일지종류": "상담일지",
+      "회원명": "홍길동",
+      "내용": "오늘은 제품설명회를 진행했습니다."
+    }
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        sheet_name = data.get("일지종류", "").strip()
+        member = data.get("회원명", "").strip()
+        content = data.get("내용", "").strip()
+
+        if not sheet_name or not member or not content:
+            return jsonify({"status": "error", "error": "일지종류, 회원명, 내용은 필수 입력 항목입니다."}), 400
+
+        ok = save_memo(sheet_name, member, content)
+        if ok:
+            return jsonify({"status": "success", "message": f"{member}님의 {sheet_name} 저장 완료"}), 201
+        return jsonify({"status": "error", "error": "시트 저장에 실패했습니다."}), 500
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+
+# @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+# ======================================================================================
+# 자연어 전용 메모 저장
+# ======================================================================================
 @app.route("/add_counseling", methods=["POST"])
 def add_counseling_route():
     """
-    상담/개인/활동 일지 저장 API
+    상담/개인/활동 일지 저장 API (자연어 전용)
     📌 설명:
     자연어 요청문을 파싱하여 상담일지/개인일지/활동일지 시트에 저장합니다.
     📥 입력(JSON 예시):
     {
-    "요청문": "김기범 상담일지 저장 헤모힘 24박스를 택배 발송함."
+      "요청문": "이태수 상담일지 저장 오늘부터 슬림바디 다시 시작"
     }
     """
-
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
         text = data.get("요청문", "").strip()
 
-        match = re.search(r"([가-힣]{2,10})\s*(상담일지|개인일지|활동일지)", text)
+        match = re.search(r"([가-힣]{2,10})\s*(상담일지|개인일지|활동일지)\s*저장", text)
         if not match:
-            return jsonify({"error": "회원명을 인식할 수 없습니다."}), 400
+            return jsonify({"status": "error", "error": "회원명 또는 일지종류를 인식할 수 없습니다."}), 400
+
         member_name = match.group(1).strip()
         sheet_type = match.group(2)
 
-        content = clean_content(text, member_name)
+        content = text.replace(f"{member_name} {sheet_type} 저장", "").strip()
         if not content:
-            return jsonify({"error": "저장할 내용이 비어 있습니다."}), 400
+            return jsonify({"status": "error", "error": "저장할 내용이 비어 있습니다."}), 400
 
-        if save_memo(sheet_type, member_name, content):
-            return jsonify({"message": f"{member_name}님의 {sheet_type} 저장 완료"}), 201
-        return jsonify({"message": "시트 저장에 실패했습니다."}), 500
+        ok = save_memo(sheet_type, member_name, content)
+        if ok:
+            return jsonify({"status": "success", "message": f"{member_name}님의 {sheet_type} 저장 완료"}), 201
+        return jsonify({"status": "error", "error": "시트 저장에 실패했습니다."}), 500
 
     except Exception as e:
         traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+# @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+# ======================================================================================
+# 자동 분기 메모 저장
+# ======================================================================================
+@app.route("/memo_save_auto", methods=["POST"])
+def memo_save_auto():
+    """
+    메모 저장 자동 분기 API
+    📌 설명:
+    - JSON 입력(일지종류, 회원명, 내용) → save_memo_route
+    - 자연어 입력(요청문) → add_counseling_route
+    📥 입력(JSON 예시1 - JSON 전용):
+    {
+      "일지종류": "상담일지",
+      "회원명": "홍길동",
+      "내용": "오늘은 제품설명회를 진행했습니다."
+    }
+    📥 입력(JSON 예시2 - 자연어 전용):
+    {
+      "요청문": "이태수 상담일지 저장 오늘부터 슬림바디 다시 시작"
+    }
+    """
+    data = request.get_json(silent=True) or {}
+
+    if "요청문" in data or "text" in data:
+        return add_counseling_route()
+    if "일지종류" in data and "회원명" in data:
+        return save_memo_route()
+
+    return jsonify({
+        "status": "error",
+        "message": "❌ 입력이 올바르지 않습니다. "
+                   "자연어는 '요청문/text', JSON은 '일지종류/회원명/내용'을 포함해야 합니다."
+    }), 400
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1682,41 +1771,6 @@ def search_memo_from_text():
 
 
 
-
-
-# ======================================================================================
-# 메모 저장
-# ======================================================================================
-@app.route("/save_memo", methods=["POST"])
-def save_memo_route():
-    """
-    일지 저장 API
-    📌 설명:
-    회원명과 일지 종류, 내용을 입력받아 해당 시트에 저장합니다.
-    📥 입력(JSON 예시):
-    {
-    "일지종류": "상담일지",
-    "회원명": "홍길동",
-    "내용": "오늘은 제품설명회를 진행했습니다."
-    }
-    """
-
-    try:
-        data = request.get_json()
-        sheet_name = data.get("일지종류", "").strip()
-        member = data.get("회원명", "").strip()
-        content = data.get("내용", "").strip()
-
-        if not sheet_name or not member or not content:
-            return jsonify({"error": "일지종류, 회원명, 내용은 필수 입력 항목입니다."}), 400
-
-        save_memo(sheet_name, member, content)
-        return jsonify({"message": f"{member}님의 {sheet_name} 저장 완료"}), 201
-
-    except ValueError as ve:
-        return jsonify({"error": str(ve)}), 400
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
     
 
 
