@@ -5,7 +5,7 @@
 | 경로(Path) | 함수명(Function) | 설명 (docstring) |
 |------------|-----------------|------------------|
 | `/` | `home` | 홈(Health Check) API |
-| `/debug_sheets` | `debug_sheets` | 시트 디버그 API |
+| `/debug_sheets` | `debug_sheets` | ⚠️ 설명 없음 |
 | `/find_member` | `find_member_route` | 회원 조회 API |
 | `/members/search-nl` | `search_by_natural_language` | 회원 자연어 검색 API |
 | `/update_member` | `update_member_route` | 회원 수정 API |
@@ -28,14 +28,25 @@
 | `/delete_order_confirm` | `delete_order_confirm` | 주문 삭제 확정 API |
 | `/delete_order_request` | `delete_order_request` | 주문 삭제 요청/확정 API |
 | `/add_counseling` | `add_counseling_route` | 상담/개인/활동 일지 저장 API |
-| `/search_memo` | `search_memo` | 메모 검색 API |
-| `/search_memo_from_text` | `search_memo_from_text` | 자연어 메모 검색 API |
+| `/search_memo` | `search_memo` | 메모 고급 검색 API |
+| `/search_memo_from_text` | `search_memo_from_text` | 자연어 메모 검색 API (페이지네이션 지원) |
 | `/find_memo` | `find_memo_route` | 일지 조회 API |
 | `/save_memo` | `save_memo_route` | 일지 저장 API |
 | `/register_commission` | `register_commission_route` | 후원수당 등록 API |
-| `/find_commission` | `find_commission_route` | 후원수당 등록 API |
+| `/find_commission` | `find_commission_route` | 후원수당 조회 API |
 | `/update_commission` | `update_commission_route` | 후원수당 수정 API |
 | `/delete_commission` | `delete_commission_route` | 후원수당 삭제 API |
+| `/member_auto` | `member_auto` | 회원 자동 분기 API |
+| `/member_delete_auto` | `member_delete_auto` | 회원 삭제 자동 분기 API |
+| `/member_find_auto` | `member_find_auto` | 회원 조회 자동 분기 API |
+| `/order_auto` | `order_auto` | 주문 자동 분기 API |
+| `/order_delete_auto` | `order_delete_auto` | 주문 삭제 자동 분기 API |
+| `/order_find_auto` | `order_find_auto` | 주문 조회 자동 분기 API |
+| `/memo_auto` | `memo_auto` | 메모 검색 자동 분기 API |
+| `/memo_find_auto` | `memo_find_auto` | 메모 조회 자동 분기 API |
+| `/commission_auto` | `commission_auto` | 후원수당 자동 분기 API |
+| `/commission_delete_auto` | `commission_delete_auto` | 후원수당 삭제 자동 분기 API |
+| `/commission_find_auto` | `commission_find_auto` | 후원수당 조회 자동 분기 API |
 
 ## 📄 상세 Docstring
 ### `/` → `home`
@@ -46,13 +57,7 @@
 ```
 
 ### `/debug_sheets` → `debug_sheets`
-```text
-시트 디버그 API
-📌 설명:
-연결된 Google Sheet의 워크시트 목록을 반환합니다.
-📥 입력(JSON 예시):
-{}
-```
+_⚠️ docstring 없음_
 
 ### `/find_member` → `find_member_route`
 ```text
@@ -61,7 +66,7 @@
 회원명 또는 회원번호를 기준으로 DB 시트에서 정보를 조회합니다.
 📥 입력(JSON 예시):
 {
-  "회원명": "신금자"
+"회원명": "신금자"
 }
 ```
 
@@ -91,11 +96,10 @@
 ```text
 회원 저장/수정 API
 📌 설명:
-- 자연어 요청문을 파싱하여 회원을 신규 등록하거나 기존 회원 정보를 수정
-- 등록 시 회원명, 회원번호, 휴대폰번호만 반영
+자연어 요청문을 파싱하여 회원을 신규 등록하거나, 기존 회원 정보를 수정합니다.
 📥 입력(JSON 예시):
 {
-  "요청문": "홍길동 회원번호 12345 휴대폰 010-1111-2222"
+"요청문": "홍길동 회원번호 12345 휴대폰 010-1111-2222 주소 서울"
 }
 ```
 
@@ -314,26 +318,31 @@ image=@order.jpg
 
 ### `/search_memo` → `search_memo`
 ```text
-메모 검색 API
+메모 고급 검색 API
 📌 설명:
-키워드 및 검색 조건을 기반으로 상담/개인/활동 일지에서 검색합니다.
+JSON 기반으로 상담/개인/활동 일지를 검색합니다.
 📥 입력(JSON 예시):
 {
-"keywords": ["중국", "공항"],
-"mode": "전체",
-"search_mode": "동시검색",
-"limit": 10
+    "sheet": "상담일지",       # 상담일지 / 개인일지 / 활동일지 / 전체
+    "keywords": ["중국", "세미나"],
+    "search_mode": "any",    # any | 동시검색
+    "member_name": "이태수",
+    "start_date": "2023-01-01",
+    "end_date": "2023-12-31",
+    "limit": 20
 }
 ```
 
 ### `/search_memo_from_text` → `search_memo_from_text`
 ```text
-자연어 메모 검색 API
+자연어 메모 검색 API (페이지네이션 지원)
 📌 설명:
 자연어 문장에서 키워드를 추출하여 상담/개인/활동 일지를 검색합니다.
 📥 입력(JSON 예시):
 {
-"text": "이태수 개인일지 검색 자동차"
+  "text": "전체메모 검색 중국",
+  "limit": 20,
+  "offset": 0
 }
 ```
 
@@ -371,7 +380,7 @@ image=@order.jpg
 
 ### `/find_commission` → `find_commission_route`
 ```text
-후원수당 등록 API
+후원수당 조회 API
 📌 설명:
 회원명을 기준으로 후원수당 데이터를 시트에 등록합니다.
 ```
@@ -384,4 +393,97 @@ image=@order.jpg
 ### `/delete_commission` → `delete_commission_route`
 ```text
 후원수당 삭제 API
+```
+
+### `/member_auto` → `member_auto`
+```text
+회원 자동 분기 API
+📌 설명:
+- 자연어 기반 요청(요청문, text) → `update_member_route`
+- JSON 기반 요청(회원명/회원번호/필드 등) → `save_member`
+```
+
+### `/member_delete_auto` → `member_delete_auto`
+```text
+회원 삭제 자동 분기 API
+📌 설명:
+- 자연어 기반 요청 → `delete_member_field_nl`
+- JSON 기반 요청(회원명) → `delete_member_route`
+```
+
+### `/member_find_auto` → `member_find_auto`
+```text
+회원 조회 자동 분기 API
+📌 설명:
+- 자연어 기반 요청 → `find_member_route`
+- JSON 기반 요청 → `find_member_route`
+(두 경우 동일 처리)
+```
+
+### `/order_auto` → `order_auto`
+```text
+주문 자동 분기 API
+📌 설명:
+- 자연어 기반 요청(텍스트) → `upload_order_text`
+- JSON 기반 요청 → `register_order_route`
+```
+
+### `/order_delete_auto` → `order_delete_auto`
+```text
+주문 삭제 자동 분기 API
+📌 설명:
+- 자연어 기반 요청 → `delete_order_request`
+- JSON 기반 요청 → `delete_order_route`
+```
+
+### `/order_find_auto` → `order_find_auto`
+```text
+주문 조회 자동 분기 API
+📌 설명:
+- 자연어 기반 요청 → `find_order_route`
+- JSON 기반 요청 → `find_order_route`
+(두 경우 동일 처리)
+```
+
+### `/memo_auto` → `memo_auto`
+```text
+메모 검색 자동 분기 API
+📌 설명:
+- 자연어 기반 요청(검색 문장) → `search_memo_from_text`
+- JSON 기반 요청 → `search_memo`
+```
+
+### `/memo_find_auto` → `memo_find_auto`
+```text
+메모 조회 자동 분기 API
+📌 설명:
+- 자연어 기반 요청 → `find_memo_route`
+- JSON 기반 요청 → `find_memo_route`
+(두 경우 동일 처리)
+```
+
+### `/commission_auto` → `commission_auto`
+```text
+후원수당 자동 분기 API
+📌 설명:
+- 자연어 기반 요청 → `register_commission_route`
+- JSON 기반 요청 → `update_commission_route`
+```
+
+### `/commission_delete_auto` → `commission_delete_auto`
+```text
+후원수당 삭제 자동 분기 API
+📌 설명:
+- 자연어 기반 요청 → `delete_commission_route`
+- JSON 기반 요청 → `delete_commission_route`
+(두 경우 동일 처리)
+```
+
+### `/commission_find_auto` → `commission_find_auto`
+```text
+후원수당 조회 자동 분기 API
+📌 설명:
+- 자연어 기반 요청 → `find_commission_route`
+- JSON 기반 요청 → `find_commission_route`
+(두 경우 동일 처리)
 ```

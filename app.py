@@ -204,25 +204,51 @@ def debug_sheets():
 
 
 
-
-
-
-
+# @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 # ======================================================================================
-# ✅ 회원 조회
+# ✅ 회원 조회 (자동 분기)
+# ======================================================================================
+@app.route("/member_find_auto", methods=["POST"])
+def member_find_auto():
+    """
+    회원 조회 자동 분기 API
+    📌 설명:
+    - 자연어 기반 요청(text, query 포함) → search_by_natural_language
+    - JSON 기반 요청(회원명, 회원번호 포함) → find_member_route
+    """
+    data = request.get_json(silent=True) or {}
+
+    # 자연어 기반
+    if "text" in data or "query" in data:
+        return search_by_natural_language()
+
+    # JSON 기반
+    if "회원명" in data or "회원번호" in data:
+        return find_member_route()
+
+    return jsonify({
+        "status": "error",
+        "message": "❌ 입력이 올바르지 않습니다. "
+                   "자연어는 'text/query', JSON은 '회원명/회원번호'를 포함해야 합니다."
+    }), 400
+
+
+
+# @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+# ======================================================================================
+# ✅ 회원 조회 (JSON 전용)
 # ======================================================================================
 @app.route("/find_member", methods=["POST"])
 def find_member_route():
     """
-    회원 조회 API
+    회원 조회 API (JSON 전용)
     📌 설명:
     회원명 또는 회원번호를 기준으로 DB 시트에서 정보를 조회합니다.
     📥 입력(JSON 예시):
     {
-    "회원명": "신금자"
+      "회원명": "신금자"
     }
     """
-
     try:
         data = request.get_json()
         name = data.get("회원명", "").strip()
@@ -241,38 +267,32 @@ def find_member_route():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
-
-
     
 
 
-
-
+# @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+# ======================================================================================
 # ✅ 자연어 기반 회원 검색 API
+# ======================================================================================
 @app.route("/members/search-nl", methods=["POST"])
 def search_by_natural_language():
     """
-    회원 자연어 검색 API
+    회원 자연어 검색 API (자연어 전용)
     📌 설명:
     자연어 문장에서 (필드, 키워드)를 추출하여 DB 시트에서 회원을 검색합니다.
     📥 입력(JSON 예시):
     {
-    "query": "계보도 장천수 우측"
+      "query": "계보도 장천수 우측"
     }
     """
-
     data = request.get_json()
     query = data.get("query")
     if not query:
         return Response("query 파라미터가 필요합니다.", status=400)
 
-    offset = int(data.get("offset", 0))  # ✅ 추가된 부분
+    offset = int(data.get("offset", 0))
 
     field, keyword = parse_natural_query(query)
-    print("🔍 추출된 필드:", field)
-    print("🔍 추출된 키워드:", keyword)
-
     if not field or not keyword:
         return Response("자연어에서 검색 필드와 키워드를 찾을 수 없습니다.", status=400)
 
@@ -280,59 +300,25 @@ def search_by_natural_language():
         sheet = get_member_sheet()
         records = sheet.get_all_records()
 
-
-        print("🧾 전체 키 목록:", records[0].keys())  # ← 여기!
-
-
         normalized_field = field.strip()
         normalized_keyword = keyword.strip().lower()
-
-
-
         if normalized_field == "계보도":
             normalized_keyword = normalized_keyword.replace(" ", "")
 
-
-
-
-
-        # ✅ 디버깅 출력
-        print("🧾 전체 키 목록:", records[0].keys() if records else "레코드 없음")
-        for m in records:
-            cell = str(m.get(normalized_field, "")).strip().lower()
-            print(f"🔎 '{normalized_keyword}' == '{cell}' → {normalized_keyword == cell}")
-
-        # ✅ 대소문자 구분 없이 정확히 일치
         filtered = [
             m for m in records
             if normalized_keyword == str(m.get(normalized_field, "")).strip().lower().replace(" ", "")
         ]
-
-
-        # ✅ 이름순 정렬
         filtered.sort(key=lambda m: m.get("회원명", ""))
-
-
-
 
         lines = [
             f"{m.get('회원명', '')} (회원번호: {m.get('회원번호', '')}" +
-            (f", 특수번호: {m.get('특수번호', '')}" if m.get('특수번호', '') else "") +
             (f", 연락처: {m.get('휴대폰번호', '')}" if m.get('휴대폰번호', '') else "") +
-            (f", {remove_josa(str(m.get('코드', '')).strip())}" if m.get('코드', '') else "") +
             ")"
             for m in filtered[offset:offset+40]
         ]
 
-
-
-
-
-
-
-        # ✅ 다음 있음 표시
-        has_more = offset + 40 < len(filtered)
-        if has_more:
+        if offset + 40 < len(filtered):
             lines.append("--- 다음 있음 ---")
 
         response_text = "\n".join(lines) if lines else "조건에 맞는 회원이 없습니다."
@@ -340,6 +326,9 @@ def search_by_natural_language():
 
     except Exception as e:
         return Response(f"[서버 오류] {str(e)}", status=500)
+
+
+
 
 
 
@@ -1085,42 +1074,6 @@ def parse_and_save_order():
 
 
 
-# ======================================================================================
-# ✅ 주문 조회
-# ======================================================================================
-@app.route("/find_order", methods=["POST"])
-def find_order_route():
-    """
-    주문 조회 API
-    📌 설명:
-    회원명과 제품명을 기준으로 주문 내역을 조회합니다.
-    📥 입력(JSON 예시):
-    {
-    "회원명": "김상민",
-    "제품명": "헤모힘"
-    }
-    """
-    try:
-        data = request.get_json()
-        member = data.get("회원명", "").strip()
-        product = data.get("제품명", "").strip()
-
-        if not member and not product:
-            return jsonify({"error": "회원명 또는 제품명을 입력해야 합니다."}), 400
-
-        matched = find_order(member, product)
-        if not matched:
-            return jsonify({"error": "해당 주문을 찾을 수 없습니다."}), 404
-
-        if len(matched) == 1:
-            return jsonify(clean_order_data(matched[0])), 200
-
-        return jsonify([clean_order_data(o) for o in matched]), 200
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
 
 
 
@@ -1449,8 +1402,41 @@ def add_counseling_route():
 
     
 
+# @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+# ======================================================================================
+# ✅ 메모 검색 (자동 분기)
+# ======================================================================================
+@app.route("/memo_find_auto", methods=["POST"])
+def memo_find_auto():
+    """
+    메모 검색 자동 분기 API
+    📌 설명:
+    - 자연어 기반 요청(text, query 포함) → search_memo_from_text
+    - JSON 기반 요청(sheet, keywords, member_name 등 포함) → search_memo
+    """
+    data = request.get_json(silent=True) or {}
+
+    # ✅ 자연어 기반: query / text 가 있을 때
+    if "query" in data or "text" in data:
+        return search_memo_from_text()
+
+    # ✅ JSON 기반: sheet / keywords / member_name 중 하나라도 있을 때
+    if any(k in data for k in ["sheet", "keywords", "member_name"]):
+        return search_memo()
+
+    # ✅ 단일 문자열만 전달된 경우 (ex: { "text": "전체메모 검색 중국" } 로 처리)
+    if isinstance(data, str) and data.strip():
+        return search_memo_from_text()
+
+    return jsonify({
+        "status": "error",
+        "message": "❌ 입력이 올바르지 않습니다. "
+                   "자연어는 'query/text/단일문자열', "
+                   "JSON은 'sheet/keywords/member_name'을 포함해야 합니다."
+    }), 400
 
 
+# @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 # ======================================================================================
 # ✅ API 고급 검색 (content 문자열 기반, 조건식 가능)
 # ======================================================================================
@@ -1542,7 +1528,7 @@ def search_memo():
 
 
 
-
+# @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 # ======================================================================================
 # ✅ 자연어 검색 (사람 입력 “검색” 문장)
 # ======================================================================================
@@ -1816,25 +1802,6 @@ def register_commission_route():
 
 
 
-@app.route("/find_commission", methods=["POST"])
-def find_commission_route():
-    """
-    후원수당 조회 API
-    📌 설명:
-    회원명을 기준으로 후원수당 데이터를 시트에 등록합니다.
-    """    
-    try:
-        data = request.get_json()
-        member = data.get("회원명", "").strip()
-        if not member:
-            return jsonify({"status": "error", "error": "회원명이 필요합니다."}), 400
-
-        results = find_commission({"회원명": member})
-        return jsonify({"status": "success", "results": results}), 200
-
-    except Exception as e:
-        return jsonify({"status": "error", "error": str(e)}), 500
-
 
 
 
@@ -1898,91 +1865,221 @@ def delete_commission_route():
 
 
 
-# ============================================================
-# ✅ 자동 분기 라우트 모음
-# ============================================================
-# ============================================================
-# ✅ 공통 자동 분기 함수 (강화판)
-# ============================================================
-def auto_dispatch(nl_func, json_func):
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ======================================================================================
+# ✅ 주문 조회 (JSON 전용)
+# ======================================================================================
+@app.route("/find_order", methods=["POST"])
+def find_order_route():
     """
-    공통 자동 분기 함수
-    - nl_func: 자연어 기반 처리 함수 (iPad)
-    - json_func: JSON 기반 처리 함수 (PC)
+    주문 조회 API (JSON 전용)
+    📌 설명:
+    회원명과 제품명을 기준으로 주문 내역을 조회합니다.
+    📥 입력(JSON 예시):
+    {
+      "회원명": "김상민",
+      "제품명": "헤모힘"
+    }
+    """
+    try:
+        data = request.get_json()
+        member = data.get("회원명", "").strip()
+        product = data.get("제품명", "").strip()
+
+        if not member and not product:
+            return jsonify({"error": "회원명 또는 제품명을 입력해야 합니다."}), 400
+
+        matched = find_order(member, product)
+        if not matched:
+            return jsonify({"error": "해당 주문을 찾을 수 없습니다."}), 404
+
+        if len(matched) == 1:
+            return jsonify(clean_order_data(matched[0])), 200
+        return jsonify([clean_order_data(o) for o in matched]), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ======================================================================================
+# ✅ 주문 조회 (자연어 전용)
+# ======================================================================================
+@app.route("/orders/search-nl", methods=["POST"])
+def search_order_by_nl():
+    """
+    주문 자연어 검색 API (자연어 전용)
+    📌 설명:
+    자연어 문장에서 회원명, 제품명 등을 추출하여 주문을 조회합니다.
+    📥 입력(JSON 예시):
+    {
+      "query": "김상민 헤모힘 주문 조회"
+    }
+    """
+    data = request.get_json()
+    query = data.get("query")
+    if not query:
+        return Response("query 파라미터가 필요합니다.", status=400)
+
+    parsed = parse_order_text(query)
+    if not parsed:
+        return Response("자연어에서 주문 정보를 추출할 수 없습니다.", status=400)
+
+    return jsonify(find_order(parsed.get("회원명", ""), parsed.get("제품명", "")))
+
+
+# ======================================================================================
+# ✅ 주문 조회 (자동 분기)
+# ======================================================================================
+@app.route("/order_find_auto", methods=["POST"])
+def order_find_auto():
+    """
+    주문 조회 자동 분기 API
+    📌 설명:
+    - 자연어 기반 요청(query, text) → search_order_by_nl
+    - JSON 기반 요청(회원명, 제품명) → find_order_route
     """
     data = request.get_json(silent=True) or {}
 
-    # ✅ 자연어 기반: text / 요청문
-    if "text" in data or "요청문" in data:
-        return nl_func()
+    if "query" in data or "text" in data:
+        return search_order_by_nl()
 
-    # ✅ JSON 기반: keywords / sheet / 회원명 / 제품명 / 수정목록 / orders
-    json_keys = {"keywords", "sheet", "회원명", "제품명", "수정목록", "orders"}
-    if any(k in data for k in json_keys):
-        return json_func()
+    if "회원명" in data or "제품명" in data:
+        return find_order_route()
 
-    # ✅ 잘못된 입력
-    return jsonify({
-        "status": "error",
-        "message": "❌ 입력이 올바르지 않습니다. 자연어는 'text/요청문', JSON은 'keywords/sheet/회원명/제품명/orders' 등을 포함해야 합니다."
-    }), 400
+    if isinstance(data, str) and data.strip():
+        return search_order_by_nl()
+
+    return jsonify({"status": "error", "message": "❌ 올바른 입력이 필요합니다."}), 400
 
 
-# ============================================================
-# ✅ 회원
-# ============================================================
-@app.route("/member_auto", methods=["POST"])
-def member_auto():
-    return auto_dispatch(update_member_route, save_member)
 
-@app.route("/member_delete_auto", methods=["POST"])
-def member_delete_auto():
-    return auto_dispatch(delete_member_field_nl, delete_member_route)
 
-@app.route("/member_find_auto", methods=["POST"])
-def member_find_auto():
-    return auto_dispatch(find_member_route, find_member_route)
 
-# ============================================================
-# ✅ 주문
-# ============================================================
-@app.route("/order_auto", methods=["POST"])
-def order_auto():
-    return auto_dispatch(upload_order_text, register_order_route)
 
-@app.route("/order_delete_auto", methods=["POST"])
-def order_delete_auto():
-    return auto_dispatch(delete_order_request, delete_order_route)
 
-@app.route("/order_find_auto", methods=["POST"])
-def order_find_auto():
-    return auto_dispatch(find_order_route, find_order_route)
 
-# ============================================================
-# ✅ 메모
-# ============================================================
-@app.route("/memo_auto", methods=["POST"])
-def memo_auto():
-    return auto_dispatch(search_memo_from_text, search_memo)
 
-@app.route("/memo_find_auto", methods=["POST"])
-def memo_find_auto():
-    return auto_dispatch(find_memo_route, find_memo_route)
 
-# ============================================================
-# ✅ 후원수당
-# ============================================================
-@app.route("/commission_auto", methods=["POST"])
-def commission_auto():
-    return auto_dispatch(register_commission_route, update_commission_route)
 
-@app.route("/commission_delete_auto", methods=["POST"])
-def commission_delete_auto():
-    return auto_dispatch(delete_commission_route, delete_commission_route)
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ======================================================================================
+# ✅ 후원수당 조회 (JSON 전용)
+# ======================================================================================
+@app.route("/find_commission", methods=["POST"])
+def find_commission_route():
+    """
+    후원수당 조회 API (JSON 전용)
+    📌 설명:
+    회원명을 기준으로 후원수당 데이터를 조회합니다.
+    """
+    data = request.get_json()
+    member = data.get("회원명", "").strip()
+    if not member:
+        return jsonify({"status": "error", "error": "회원명이 필요합니다."}), 400
+
+    return jsonify(find_commission({"회원명": member}))
+
+
+# ======================================================================================
+# ✅ 후원수당 조회 (자연어 전용)
+# ======================================================================================
+@app.route("/commission/search-nl", methods=["POST"])
+def search_commission_by_nl():
+    """
+    후원수당 자연어 검색 API (자연어 전용)
+    📌 설명:
+    자연어 문장에서 회원명을 추출하여 후원수당을 조회합니다.
+    """
+    data = request.get_json()
+    query = data.get("query")
+    if not query:
+        return Response("query 파라미터가 필요합니다.", status=400)
+
+    parsed = parse_commission(query)
+    return jsonify(find_commission({"회원명": parsed.get("회원명", "")}))
+
+
+# ======================================================================================
+# ✅ 후원수당 조회 (자동 분기)
+# ======================================================================================
 @app.route("/commission_find_auto", methods=["POST"])
 def commission_find_auto():
-    return auto_dispatch(find_commission_route, find_commission_route)
+    """
+    후원수당 조회 자동 분기 API
+    📌 설명:
+    - 자연어 기반 요청(query, text) → search_commission_by_nl
+    - JSON 기반 요청(회원명) → find_commission_route
+    """
+    data = request.get_json(silent=True) or {}
+
+    if "query" in data or "text" in data:
+        return search_commission_by_nl()
+
+    if "회원명" in data:
+        return find_commission_route()
+
+    if isinstance(data, str) and data.strip():
+        return search_commission_by_nl()
+
+    return jsonify({"status": "error", "message": "❌ 올바른 입력이 필요합니다."}), 400
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

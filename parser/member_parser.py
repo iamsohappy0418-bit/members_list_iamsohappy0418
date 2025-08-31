@@ -162,11 +162,17 @@ def parse_request_and_update(text: str) -> Optional[Dict[str, str]]:
 # =============================================================================
 # ✅ Intent 추론 / 간단 파서
 # =============================================================================
+
+# @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 def parse_natural_query(text: str) -> Tuple[Optional[str], Optional[str]]:
     """
     자연어에서 (필드, 키워드) 추출
     - '회원조회 123456' → ("회원번호", "123456")
     - '이태수 조회' → ("회원명", "이태수")
+    - '회원명 강소희' → ("회원명", "강소희")
+    - '회원번호 12345' → ("회원번호", "12345")
+    - '강소희' → ("회원명", "강소희")
+    - '계보도 장천수 우측' → ("계보도", "장천수우측")
     """
     if not text:
         return None, None
@@ -181,27 +187,53 @@ def parse_natural_query(text: str) -> Tuple[Optional[str], Optional[str]]:
             return "회원번호", keyword
         return "회원명", keyword
 
-    # 2) 일반 조회
+    # 2) '회원명 XXX'
+    m = re.match(r"회원명\s+([가-힣a-zA-Z0-9]+)", s)
+    if m:
+        return "회원명", m.group(1).strip()
+
+    # 3) '회원번호 XXX'
+    m = re.match(r"회원번호\s+(\d+)", s)
+    if m:
+        return "회원번호", m.group(1).strip()
+
+    # 4) 일반 조회/검색/찾아
     if any(k in s for k in ["조회", "검색", "찾아"]):
         m = re.match(r"^(\S+)\s*(조회|검색|찾아)", s)
         if m:
-            return "회원명", m.group(1)
+            keyword = m.group(1).strip()
+            if re.fullmatch(r"\d+", keyword):
+                return "회원번호", keyword
+            return "회원명", keyword
 
-    # 3) 계보도/소개한분/코드 등 특정 필드
+    # 5) 계보도/소개한분/코드 등 특정 필드
     m = re.search(r"계보도.*?([가-힣]+)\s*(우측|좌측)", s)
     if m:
         return "계보도", f"{m.group(1)}{m.group(2)}"
 
-    mapping = {"계보도": "계보도", "소개한분": "소개한분", "코드": "코드",
-               "분류": "분류", "리더님": "리더님", "회원번호": "회원번호"}
+    mapping = {
+        "계보도": "계보도",
+        "소개한분": "소개한분",
+        "코드": "코드",
+        "분류": "분류",
+        "리더님": "리더님",
+        "회원번호": "회원번호",
+    }
     for field in mapping:
         if field in s:
-            mm = re.search(rf"{field}\s*(?:은|는|이|가|을|를|이란|이라는|에|으로|로)?\s*(.*)", s)
+            mm = re.search(
+                rf"{field}\s*(?:은|는|이|가|을|를|이란|이라는|에|으로|로)?\s*(.*)", s
+            )
             if mm:
                 kw = re.split(r"[,\s\n.]", mm.group(1).strip())[0]
                 return field, kw
 
+    # 6) 단어 하나만 입력 → 회원명으로 간주
+    if re.fullmatch(r"[가-힣a-zA-Z]+", s):
+        return "회원명", s
+
     return None, None
+
 
 
 
