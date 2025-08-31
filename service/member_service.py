@@ -1,6 +1,9 @@
 import gspread
 from utils.sheets import get_member_sheet, safe_update_cell
+from utils.sheets import delete_row
 
+from parser.field_map import field_map
+from utils.common import remove_spaces
 
 # ==============================
 # 회원 등록 (Create)
@@ -201,6 +204,79 @@ def update_member_internal(data: dict) -> bool:
     if not updates:
         return False
     return update_member(name, updates)
+
+
+
+
+
+def delete_member_internal(name: str):
+    """
+    회원명 기준으로 DB 시트에서 해당 행 삭제
+    """
+    if not name:
+        return {"error": "회원명이 필요합니다."}, 400
+
+    sheet = get_member_sheet()
+    rows = sheet.get_all_records()
+
+    for i, row in enumerate(rows):
+        if row.get("회원명", "").strip() == name:
+            delete_row(sheet, i + 2)  # 헤더 제외 +2
+            return {"message": f"{name}님의 회원 정보가 삭제되었습니다."}, 200
+
+    return {"error": f"{name} 회원을 찾을 수 없습니다."}, 404
+
+
+
+
+
+def delete_member_internal(name: str):
+    """
+    회원명 기준으로 DB 시트에서 해당 회원 전체 행 삭제
+    """
+    if not name:
+        return {"error": "회원명이 필요합니다."}, 400
+
+    sheet = get_member_sheet()
+    rows = sheet.get_all_records()
+
+    for i, row in enumerate(rows):
+        if row.get("회원명", "").strip() == name:
+            delete_row(sheet, i + 2)  # 헤더 제외
+            return {"message": f"{name}님의 회원 정보가 삭제되었습니다."}, 200
+
+    return {"error": f"{name} 회원을 찾을 수 없습니다."}, 404
+
+
+def delete_member_field_nl_internal(text: str, fields: list):
+    """
+    자연어 요청 기반으로 특정 회원의 일부 필드만 삭제
+    ex: "홍길동 휴대폰번호 삭제"
+    """
+    if not text or not fields:
+        return {"error": "요청문 또는 필드가 필요합니다."}, 400
+
+    sheet = get_member_sheet()
+    rows = sheet.get_all_records()
+
+    # 회원명 추출
+    name = None
+    for row in rows:
+        if str(row.get("회원명", "")) in text:
+            name = row.get("회원명")
+            break
+
+    if not name:
+        return {"error": "회원명을 찾을 수 없습니다."}, 404
+
+    headers = sheet.row_values(1)
+
+    # 대상 행 찾기
+    target_row = None
+    row_index = None
+    for i, row in enumerate(rows, start=2):
+        if row.get("회원명") == name:
+            target_ro_
 
 
 

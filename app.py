@@ -11,6 +11,10 @@ import requests
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 
+from itertools import chain
+
+
+
 # ===== project: config =====
 from config import (
     API_URLS, HEADERS,
@@ -44,7 +48,7 @@ from utils.clean_content import clean_content
 from utils.http import call_memberslist_add_orders, call_impact_sync
 from utils.openai_utils import (
     extract_order_from_uploaded_image,
-    parse_order_from_text,
+    
 )
 
 from utils import format_memo_results
@@ -57,7 +61,7 @@ from parser import (
     parse_request_and_update,
     parse_natural_query,
     parse_deletion_request,
-    parse_order_text,
+  
     parse_memo,
     parse_commission,
     guess_intent,
@@ -68,9 +72,9 @@ from service.member_service import (
     find_member_internal,
     clean_member_data,
     register_member_internal,
-# update_member_internal,
-# delete_member_internal,
-# delete_member_field_nl_internal,
+    update_member_internal,
+    delete_member_internal,
+    delete_member_field_nl_internal,
 )
 
 # ===== parser: order =====
@@ -189,8 +193,9 @@ def debug_sheets():
     
 
 # ============================================================
-# **주문 업로드(iPad/PC 공통 엔트리)**
+# **공통 자동 분기 함수**
 # ============================================================
+
 
 
 
@@ -585,7 +590,7 @@ def delete_member_field_nl():
                 if remove_spaces(kw) in [remove_spaces(p) for p in parts] and field not in matched_fields:
                     matched_fields.append(field)
 
-        return delete_member_field_nl_direct(text, matched_fields)
+        return delete_member_field_nl_internal(text, matched_fields)
 
     except Exception as e:
         import traceback
@@ -1420,7 +1425,7 @@ def add_counseling_route():
         if not content:
             return jsonify({"error": "저장할 내용이 비어 있습니다."}), 400
 
-        if save_to_sheet(sheet_type, member_name, content):
+        if save_memo(sheet_type, member_name, content):
             return jsonify({"message": f"{member_name}님의 {sheet_type} 저장 완료"}), 201
         return jsonify({"message": "시트 저장에 실패했습니다."}), 500
 
@@ -1435,44 +1440,12 @@ def add_counseling_route():
 
 
 
-# ======================================================================================
-# ✅ 자동 분기 (iPad = 자연어 / PC = JSON)
-# ======================================================================================
-@app.route("/search_memo_auto", methods=["POST"])
-def search_memo_auto():
-    """
-    자동 메모 검색 API
-    📌 설명:
-    - iPad(자연어 입력): { "text": "이태수 상담일지 검색 자동차" }
-    - PC(JSON 입력): {
-        "sheet": "상담일지",
-        "keywords": ["자동차"],
-        "search_mode": "any",
-        "member_name": "이태수",
-        "limit": 20
-      }
-    """
-    try:
-        data = request.get_json(silent=True) or {}
 
-        if "text" in data:  
-            # ✅ iPad → 자연어 기반 검색
-            return search_memo_from_text()
-        elif "keywords" in data or "sheet" in data:
-            # ✅ PC → JSON 기반 검색
-            return search_memo()
-        else:
-            return jsonify({
-                "status": "error",
-                "message": "❌ 입력이 올바르지 않습니다. 'text' 또는 'keywords'를 포함해야 합니다."
-            }), 400
 
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({
-            "status": "error",
-            "message": str(e)
-        }), 500
+
+
+
+
 
     
 
@@ -1846,7 +1819,7 @@ def register_commission_route():
 @app.route("/find_commission", methods=["POST"])
 def find_commission_route():
     """
-    후원수당 등록 API
+    후원수당 조회 API
     📌 설명:
     회원명을 기준으로 후원수당 데이터를 시트에 등록합니다.
     """    
@@ -1908,11 +1881,108 @@ def delete_commission_route():
     except Exception as e:
         return jsonify({"status": "error", "error": str(e)}), 500
 
-
-
 # ============================================================
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ============================================================
+# ✅ 자동 분기 라우트 모음
+# ============================================================
+# ============================================================
+# ✅ 공통 자동 분기 함수 (강화판)
+# ============================================================
+def auto_dispatch(nl_func, json_func):
+    """
+    공통 자동 분기 함수
+    - nl_func: 자연어 기반 처리 함수 (iPad)
+    - json_func: JSON 기반 처리 함수 (PC)
+    """
+    data = request.get_json(silent=True) or {}
+
+    # ✅ 자연어 기반: text / 요청문
+    if "text" in data or "요청문" in data:
+        return nl_func()
+
+    # ✅ JSON 기반: keywords / sheet / 회원명 / 제품명 / 수정목록 / orders
+    json_keys = {"keywords", "sheet", "회원명", "제품명", "수정목록", "orders"}
+    if any(k in data for k in json_keys):
+        return json_func()
+
+    # ✅ 잘못된 입력
+    return jsonify({
+        "status": "error",
+        "message": "❌ 입력이 올바르지 않습니다. 자연어는 'text/요청문', JSON은 'keywords/sheet/회원명/제품명/orders' 등을 포함해야 합니다."
+    }), 400
+
+
+# ============================================================
+# ✅ 회원
+# ============================================================
+@app.route("/member_auto", methods=["POST"])
+def member_auto():
+    return auto_dispatch(update_member_route, save_member)
+
+@app.route("/member_delete_auto", methods=["POST"])
+def member_delete_auto():
+    return auto_dispatch(delete_member_field_nl, delete_member_route)
+
+@app.route("/member_find_auto", methods=["POST"])
+def member_find_auto():
+    return auto_dispatch(find_member_route, find_member_route)
+
+# ============================================================
+# ✅ 주문
+# ============================================================
+@app.route("/order_auto", methods=["POST"])
+def order_auto():
+    return auto_dispatch(upload_order_text, register_order_route)
+
+@app.route("/order_delete_auto", methods=["POST"])
+def order_delete_auto():
+    return auto_dispatch(delete_order_request, delete_order_route)
+
+@app.route("/order_find_auto", methods=["POST"])
+def order_find_auto():
+    return auto_dispatch(find_order_route, find_order_route)
+
+# ============================================================
+# ✅ 메모
+# ============================================================
+@app.route("/memo_auto", methods=["POST"])
+def memo_auto():
+    return auto_dispatch(search_memo_from_text, search_memo)
+
+@app.route("/memo_find_auto", methods=["POST"])
+def memo_find_auto():
+    return auto_dispatch(find_memo_route, find_memo_route)
+
+# ============================================================
+# ✅ 후원수당
+# ============================================================
+@app.route("/commission_auto", methods=["POST"])
+def commission_auto():
+    return auto_dispatch(register_commission_route, update_commission_route)
+
+@app.route("/commission_delete_auto", methods=["POST"])
+def commission_delete_auto():
+    return auto_dispatch(delete_commission_route, delete_commission_route)
+
+@app.route("/commission_find_auto", methods=["POST"])
+def commission_find_auto():
+    return auto_dispatch(find_commission_route, find_commission_route)
 
 
 
