@@ -206,8 +206,20 @@ def find_member_route():
 
     try:
         data = request.get_json()
-        name = data.get("회원명", "").strip()
-        number = data.get("회원번호", "").strip()
+        name = (
+            data.get("회원명")
+            or data.get("memberName")
+            or data.get("name")
+            or ""
+        ).strip()
+
+        number = (
+            data.get("회원번호")
+            or data.get("memberId")
+            or data.get("id")
+            or ""
+        ).strip()
+
 
         if not name and not number:
             return jsonify({"error": "회원명 또는 회원번호를 입력해야 합니다."}), 400
@@ -370,14 +382,14 @@ def update_member_route():
 # ======================================================================================
 @app.route('/save_member', methods=['POST'])
 def save_member():
-
     """
     회원 저장/수정 API
     📌 설명:
-    자연어 요청문을 파싱하여 회원을 신규 등록하거나, 기존 회원 정보를 수정합니다.
+    - 자연어 요청문을 파싱하여 회원을 신규 등록하거나 기존 회원 정보를 수정
+    - 등록 시 회원명, 회원번호, 휴대폰번호만 반영
     📥 입력(JSON 예시):
     {
-    "요청문": "홍길동 회원번호 12345 휴대폰 010-1111-2222 주소 서울"
+      "요청문": "홍길동 회원번호 12345 휴대폰 010-1111-2222"
     }
     """
 
@@ -389,13 +401,10 @@ def save_member():
         if not 요청문:
             return jsonify({"error": "입력 문장이 없습니다"}), 400
 
-        # ✅ 파싱
-        name, number, phone, lineage = parse_registration(요청문)
+        # ✅ 파싱 (회원명, 회원번호, 휴대폰번호만 추출)
+        name, number, phone = parse_registration(요청문)
         if not name:
             return jsonify({"error": "회원명을 추출할 수 없습니다"}), 400
-
-        # ✅ 주소 기본값 처리 (iPad 등 환경에서 누락 방지)
-        address = req.get("주소") or req.get("address", "")
 
         # ✅ 시트 접근
         sheet = get_member_sheet()
@@ -412,16 +421,11 @@ def save_member():
                     "회원명": name,
                     "회원번호": number,
                     "휴대폰번호": phone,
-                    "계보도": lineage,
-                    "주소": address
                 }.items():
                     if key in headers and value:
-
-
                         row_idx = i + 2
                         col_idx = headers.index(key) + 1
                         safe_update_cell(sheet, row_idx, col_idx, value, clear_first=True)
-
 
                 return jsonify({"message": f"{name} 기존 회원 정보 수정 완료"}), 200
 
@@ -432,8 +436,6 @@ def save_member():
             "회원명": name,
             "회원번호": number,
             "휴대폰번호": phone,
-            "계보도": lineage,
-            "주소": address
         }.items():
             if key in headers and value:
                 new_row[headers.index(key)] = value
@@ -445,6 +447,7 @@ def save_member():
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
 
 
 

@@ -47,17 +47,23 @@ def extract_referrer(text: str) -> Optional[str]:
 # ======================================================================================
 # ✅ 등록 파서
 # ======================================================================================
-def parse_registration(text: str) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
-    """문장에서 (이름, 회원번호, 휴대폰번호, 계보도) 추출"""
-    text = text.replace("\n", " ").replace("\r", " ").replace("\xa0", " ").strip()
-    name = number = phone = lineage = ""
+import re
+from typing import Optional, Tuple
 
+def parse_registration(text: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """
+    문장에서 (회원명, 회원번호, 휴대폰번호)만 추출
+    나머지 필드(계보도, 주소 등)는 무시
+    """
+    text = text.replace("\n", " ").replace("\r", " ").replace("\xa0", " ").strip()
+    name = number = phone = ""
+
+    # ✅ 휴대폰번호 추출
     phone_match = re.search(r"010[-]?\d{4}[-]?\d{4}", text)
     if phone_match:
         phone = phone_match.group(0)
 
-    korean_words = re.findall(r"[가-힣]{2,}", text)
-
+    # ✅ 회원명 + 회원번호 추출
     match = re.search(r"(?:회원등록\s*)?([가-힣]{2,10})\s*회원번호\s*(\d+)", text)
     if match:
         name, number = match.group(1), re.sub(r"[^\d]", "", match.group(2))
@@ -70,11 +76,13 @@ def parse_registration(text: str) -> Tuple[Optional[str], Optional[str], Optiona
             if match:
                 name = match.group(1)
 
-    if not name and korean_words:
-        name = korean_words[0]
+    # ✅ 회원명만 있는 경우
+    if not name:
+        korean_words = re.findall(r"[가-힣]{2,}", text)
+        if korean_words:
+            name = korean_words[0]
 
-    return name or None, number or None, phone or None, lineage or None
-
+    return name or None, number or None, phone or None
 
 
 
