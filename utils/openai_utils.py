@@ -7,6 +7,12 @@ import base64
 import requests
 from typing import List, Dict, Any
 
+from config import OPENAI_API_KEY, OPENAI_API_URL
+
+
+
+
+
 # ⬇️ 로컬에서만 .env 자동 로드
 if os.getenv("RENDER") is None:
     try:
@@ -106,3 +112,95 @@ def openai_vision_extract_orders(image_bytes: io.BytesIO) -> List[Dict[str, Any]
                 o[k] = v.strip()
 
     return orders_list
+
+
+
+
+
+
+
+
+
+
+# --------------------------------------------------
+# GPT Vision: 이미지 → 주문 JSON
+# --------------------------------------------------
+# ===============================================
+# ✅ GPT Vision 기반 이미지 파서
+# ===============================================
+def extract_order_from_uploaded_image(image_bytes):
+    """
+    주문서 이미지에서 JSON 구조의 주문 데이터를 추출합니다.
+    - 입력: BytesIO 이미지
+    - 출력: { "orders": [...] } 구조
+    """
+    image_base64 = base64.b64encode(image_bytes.getvalue()).decode("utf-8")
+
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    prompt = (
+        "이미지를 분석하여 JSON 형식으로 추출하세요. "
+        "여러 개의 제품이 있을 경우 'orders' 배열에 모두 담으세요. "
+        "질문하지 말고 추출된 orders 전체를 그대로 저장할 준비를 하세요. "
+        "(이름, 휴대폰번호, 주소)는 소비자 정보임. "
+        "회원명, 결재방법, 수령확인, 주문일자 무시. "
+        "필드: 제품명, 제품가격, PV, 주문자_고객명, 주문자_휴대폰번호, 배송처"
+    )
+
+    payload = {
+        "model": "gpt-4o",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {
+                        "url": f"data:image/jpeg;base64,{image_base64}"
+                    }}
+                ]
+            }
+        ],
+        "temperature": 0
+    }
+
+    response = requests.post(OPENAI_API_URL, headers=headers, json=payload)
+    response.raise_for_status()
+
+    result_text = response.json()["choices"][0]["message"]["content"]
+
+    # 코드블록 제거
+    clean_text = re.sub(r"```(?:json)?", "", result_text).strip()
+
+    try:
+        order_data = json.loads(clean_text)
+        return order_data
+    except json.JSONDecodeError:
+        return {"raw_text": result_text}
+    
+    
+
+# --------------------------------------------------
+# GPT Chat: 자연어 → 주문 JSON
+# --------------------------------------------------
+def parse_order_from_text(text: str):
+    """자연어 주문 문장을 OpenAI Chat API에 보내 JSON 추출"""
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "model": "gpt-4o-mini",
+        "messages": [
+            {"role": "system", "content": "자연어 주문 문장을 JSON으로 변환해 주세요."},
+            {"role": "user", "content": text}
+        ],
+        "temperature": 0.0
+    }
+
+    resp = requests.post(OPENAI_API_URL, headers=headers, json=payload)
+    resp.raise_for_status()
+    return resp.json()
