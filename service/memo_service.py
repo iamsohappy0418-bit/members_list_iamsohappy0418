@@ -6,7 +6,7 @@ from datetime import timedelta
 from utils.common import parse_dt, is_match
 # ===== project: utils =====
 from utils.clean_content import clean_content
-
+from datetime import datetime
 
 # ======================================================================================
 # ✅ 메모 저장
@@ -109,8 +109,6 @@ def search_in_sheet(sheet_name, keywords, search_mode="any",
 # ======================================================================================
 # ✅ 통합 검색 (Core)
 # ======================================================================================
-from datetime import datetime
-
 def search_memo_core(sheet_name, keywords, search_mode="any", member_name=None,
                      start_date=None, end_date=None, limit=20):
     """
@@ -142,7 +140,7 @@ def search_memo_core(sheet_name, keywords, search_mode="any", member_name=None,
         pass
 
     for row in rows:
-        content = str(row.get("내용", "")).strip()
+        content = clean_content(str(row.get("내용", "")), member_name).lower()
         member = str(row.get("회원명", "")).strip()
         date_str = str(row.get("날짜", "")).strip()
 

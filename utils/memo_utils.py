@@ -1,4 +1,7 @@
 # utils/memo_utils.py
+from datetime import datetime
+
+
 
 # 📌 예시 데이터 (실제 환경에서는 API 결과로 대체)
 def get_memo_results(query):
@@ -13,15 +16,38 @@ def get_memo_results(query):
 
 # 📌 결과 포맷터 (개인일지 / 상담일지 / 활동일지 블록 구분)
 def format_memo_results(results):
+    """
+    검색된 메모 결과를 정리해서 문자열 블록으로 반환
+    - 날짜는 YYYY-MM-DD 형식으로만 출력
+    - 정렬은 하루 단위 최신순
+    - 출력 순서: 활동일지 → 상담일지 → 개인일지
+    - 출력 형식: · (YYYY-MM-DD, 회원명) 내용
+    """
+    # ✅ 하루 단위 최신순 정렬
+    try:
+        results.sort(
+            key=lambda r: datetime.strptime(str(r.get("날짜", "1900-01-01")).split()[0], "%Y-%m-%d"),
+            reverse=True
+        )
+    except Exception:
+        pass
+
     personal, counsel, activity = [], [], []
 
     for r in results:
-        date = r.get("날짜")
-        content = r.get("내용")
-        member = r.get("회원명")
-        mode = r.get("종류")
+        date = str(r.get("날짜") or "").split()[0]
+        content = r.get("내용") or ""
+        member = r.get("회원명") or ""
+        mode = r.get("일지종류") or r.get("종류")
 
-        line = f"✍️ {date} {content} ({member})"
+        if date and member:
+            line = f"· ({date}, {member}) {content}"
+        elif date:
+            line = f"· ({date}) {content}"
+        elif member:
+            line = f"· ({member}) {content}"
+        else:
+            line = f"· {content}"
 
         if mode == "개인일지":
             personal.append(line)
@@ -30,19 +56,29 @@ def format_memo_results(results):
         elif mode == "활동일지":
             activity.append(line)
 
-    output = "🔎 검색 결과\n\n"
-
-    if personal:
-        output += "📌 개인일지\n" + "\n".join(personal) + "\n\n"
-    if counsel:
-        output += "📌 상담일지\n" + "\n".join(counsel) + "\n\n"
+    output_text = "🔎 검색 결과\n\n"
     if activity:
-        output += "📌 활동일지\n" + "\n".join(activity) + "\n\n"
+        output_text += "🗂 활동일지\n" + "\n".join(activity) + "\n\n"
+    if counsel:
+        output_text += "📂 상담일지\n" + "\n".join(counsel) + "\n\n"
+    if personal:
+        output_text += "📒 개인일지\n" + "\n".join(personal) + "\n\n"
 
-    return output.strip()
+    return {
+        "text": output_text.strip(),
+        "lists": {
+            "활동일지": activity,
+            "상담일지": counsel,
+            "개인일지": personal
+        }
+    }
 
 
-# 📌 특정 회원 필터링 기능
-def filter_results_by_member(results, member_name: str):
-    """검색 결과 중 특정 회원만 필터링"""
+def filter_results_by_member(results, member_name):
+    """
+    검색 결과(results) 중 특정 회원명(member_name)만 필터링
+    """
+    if not member_name:
+        return results
     return [r for r in results if r.get("회원명") == member_name]
+

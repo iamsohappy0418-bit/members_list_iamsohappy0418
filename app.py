@@ -1727,15 +1727,14 @@ def search_memo():
 @app.route("/search_memo_from_text", methods=["POST"])
 def search_memo_from_text():
     """
-    자연어 메모 검색 API (페이지네이션 + 일지 분류 출력 + 순서 고정 + 텍스트/JSON 선택)
+    자연어 메모 검색 API (전체 메모 반환 + 일지 분류 출력 + 순서 고정 + 텍스트/JSON 선택)
     📌 설명:
     - 기본 출력: 사람이 읽기 좋은 텍스트 블록
     - {"detail": true} 옵션 추가 시: JSON 상세 구조 반환
+    - 서버는 전체 메모를 반환하고, 클라이언트(iPad)에서 15개씩 페이징 처리
     """
     data = request.get_json(silent=True) or {}
     text = (data.get("text") or "").strip()
-    limit = int(data.get("limit", 200))   # ✅ 기본 limit 200으로 설정
-    offset = int(data.get("offset", 0))
     detail = data.get("detail", False)
 
     if not text:
@@ -1800,25 +1799,17 @@ def search_memo_from_text():
 
     # ✅ 최신순 정렬
     try:
-
-
         all_results.sort(
             key=lambda x: datetime.strptime(
                 str(x.get("날짜", "1900-01-01")).split()[0], "%Y-%m-%d"
             ),
             reverse=True
         )
-
-
     except Exception:
         pass
 
     # ✅ format_memo_results 적용
     formatted = format_memo_results(all_results)
-
-    # ✅ 페이지네이션 적용
-    for key in formatted:
-        formatted[key] = formatted[key][offset:offset + limit]
 
     # ✅ 텍스트 블록 변환
     icons = {"활동일지": "🗂", "상담일지": "📂", "개인일지": "📒"}
@@ -1839,15 +1830,15 @@ def search_memo_from_text():
             "member_name": member_name,
             "search_mode": search_mode,
             "keywords": keywords,
-            "results": formatted,
-            "has_more": any(len(v) > limit for v in formatted.values())
+            "results": formatted,   # 전체 반환
+            "counts": {k: len(v) for k, v in formatted.items()}
         }), 200
     else:
         return jsonify({
             "status": "success",
             "keywords": keywords,
             "formatted_text": response_text,
-            "has_more": any(len(v) > limit for v in formatted.values())
+            "counts": {k: len(v) for k, v in formatted.items()}
         }), 200
 
 
@@ -1864,28 +1855,28 @@ def format_memo_results(results):
         "개인일지": []
     }
     for item in results:
-        date = item.get("작성일자") or "날짜 없음"
-        member_name = item.get("회원명") or "회원명 없음"
+        date = item.get("날짜") or ""
+        member_name = item.get("회원명") or ""
         content = item.get("내용") or ""
         mode = item.get("일지종류") or "전체"
 
+        # 날짜/회원명 표시 조건 처리
+        date_str = f"({date}) " if date else ""
+        member_str = f" — {member_name}" if member_name else ""
+
+        entry = f"· {date_str}{content}{member_str}"
+
         if "활동" in mode:
-            formatted["활동일지"].append(f"· ({date}) {content} — {member_name}")
+            formatted["활동일지"].append(entry)
         elif "상담" in mode:
-            formatted["상담일지"].append(f"· ({date}) {content} — {member_name}")
+            formatted["상담일지"].append(entry)
         elif "개인" in mode:
-            formatted["개인일지"].append(f"· ({date}) {content} — {member_name}")
+            formatted["개인일지"].append(entry)
         else:
-            formatted["활동일지"].append(f"· ({date}) {content} — {member_name}")
+            formatted["활동일지"].append(entry)
 
     ordered = ["활동일지", "상담일지", "개인일지"]
     return {key: formatted[key] for key in ordered}
-
-
-
-
-
-
 
 
 
