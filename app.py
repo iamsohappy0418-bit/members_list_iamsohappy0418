@@ -308,11 +308,27 @@ def search_by_natural_language():
         filtered = []
         for m in records:
             ok = True
+
+
+
             for field, keyword in conditions:
-                value = str(m.get(field, "")).strip().lower()
-                if keyword.lower() not in value:   # 대소문자 무시
-                    ok = False
-                    break
+                value = str(m.get(field, "")).strip()
+                val_lower = value.lower()
+                key_lower = keyword.lower()
+
+                if field in ["코드", "특수번호"]:
+                    # 코드/특수번호는 정확 일치 (대소문자 무시)
+                    if val_lower != key_lower:
+                        ok = False
+                        break
+                else:
+                    # 나머지 필드는 부분 검색 (대소문자 무시)
+                    if key_lower not in val_lower:
+                        ok = False
+                        break
+
+
+
             if ok:
                 filtered.append(m)
 

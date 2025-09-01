@@ -140,7 +140,12 @@ def search_memo_core(sheet_name, keywords, search_mode="any", member_name=None,
         pass
 
     for row in rows:
-        content = clean_content(str(row.get("내용", "")), member_name).lower()
+        raw_content = str(row.get("내용", ""))
+        # ✅ 1차 정제: clean_content (회원명 제거, 불필요 단어 정리)
+        content = clean_content(raw_content, member_name)
+        # ✅ 2차 정제: clean_value_expression (조사/꼬리명령어/기호 제거)
+        content = clean_value_expression(content).lower()
+
         member = str(row.get("회원명", "")).strip()
         date_str = str(row.get("날짜", "")).strip()
 
@@ -182,7 +187,6 @@ def search_memo_core(sheet_name, keywords, search_mode="any", member_name=None,
             break
 
     return results
-
 
 
 
