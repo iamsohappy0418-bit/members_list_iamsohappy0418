@@ -12,6 +12,7 @@ from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 
 from itertools import chain
+from utils import parse_natural_query_multi, infer_member_field
 
 
 
@@ -279,55 +280,105 @@ def search_by_natural_language():
     """
     회원 자연어 검색 API (자연어 전용)
     📌 설명:
-    자연어 문장에서 (필드, 키워드)를 추출하여 DB 시트에서 회원을 검색합니다.
-    📥 입력(JSON 예시):
-    {
-      "query": "계보도 장천수 우측"
-    }
+    - 자연어 문장에서 (필드, 키워드) 조건들을 추출하여 DB 시트에서 회원 검색
+    - 조건 여러 개 입력 시 AND 검색
+    - 기본은 텍스트 리스트 출력 (회원명, 회원번호, 휴대폰번호, 특수번호, 코드만 표시)
+    - {"detail": true} 옵션 → JSON 상세 응답
+    - 기본 20건(limit), offset으로 페이지네이션
     """
     data = request.get_json()
-    query = data.get("query")
+    query = (data.get("query") or "").strip()
+    detail = bool(data.get("detail", False))
+    offset = int(data.get("offset", 0))
+    limit = 20  # ✅ 기본 20건 유지
+
     if not query:
         return Response("query 파라미터가 필요합니다.", status=400)
 
-    offset = int(data.get("offset", 0))
-
-    field, keyword = parse_natural_query(query)
-    if not field or not keyword:
-        return Response("자연어에서 검색 필드와 키워드를 찾을 수 없습니다.", status=400)
+    # ✅ 조건 추출
+    conditions = parse_natural_query_multi(query)
+    if not conditions:
+        return Response("자연어에서 검색 조건을 추출할 수 없습니다.", status=400)
 
     try:
         sheet = get_member_sheet()
         records = sheet.get_all_records()
 
-        normalized_field = field.strip()
-        normalized_keyword = keyword.strip().lower()
-        if normalized_field == "계보도":
-            normalized_keyword = normalized_keyword.replace(" ", "")
+        # ✅ 조건 AND 필터링
+        filtered = []
+        for m in records:
+            ok = True
+            for field, keyword in conditions:
+                value = str(m.get(field, "")).strip().lower()
+                if keyword.lower() not in value:   # 대소문자 무시
+                    ok = False
+                    break
+            if ok:
+                filtered.append(m)
 
-        filtered = [
-            m for m in records
-            if normalized_keyword == str(m.get(normalized_field, "")).strip().lower().replace(" ", "")
-        ]
-        filtered.sort(key=lambda m: m.get("회원명", ""))
+        # ✅ 정렬 조건 분기
+        use_simple_sort = any(field in ["코드", "특수번호"] for field, _ in conditions)
 
-        lines = [
-            f"{m.get('회원명', '')} (회원번호: {m.get('회원번호', '')}" +
-            (f", 연락처: {m.get('휴대폰번호', '')}" if m.get('휴대폰번호', '') else "") +
-            ")"
-            for m in filtered[offset:offset+40]
-        ]
+        if use_simple_sort:
+            # 코드/특수번호 검색 → 회원명만 정렬
+            filtered.sort(key=lambda m: str(m.get("회원명", "")).strip())
+        else:
+            # 기본 → 회원명 + 회원번호
+            def sort_key(m):
+                name = str(m.get("회원명", "")).strip()
+                number = m.get("회원번호", "")
+                try:
+                    number_int = int(number) if str(number).isdigit() else 0
+                except:
+                    number_int = 0
+                return (name, number_int)
 
-        if offset + 40 < len(filtered):
+            filtered.sort(key=sort_key)
+
+        # ✅ 페이지네이션
+        paginated = filtered[offset:offset + limit]
+
+        # ✅ JSON 상세 모드
+        if detail:
+            return jsonify({
+                "status": "success",
+                "query": query,
+                "conditions": conditions,
+                "offset": offset,
+                "limit": limit,
+                "count": len(paginated),
+                "results": paginated,
+                "has_more": offset + limit < len(filtered)
+            }), 200
+
+        # ✅ 텍스트 모드
+        if not paginated:
+            response_text = f"🔎 검색 요청: {query}\n조건에 맞는 회원이 없습니다."
+            return Response(response_text, mimetype='text/plain')
+
+        lines = [f"🔎 검색 요청: {query}"]  # 타이틀 한 번만 표시
+        for m in paginated:
+            parts = [
+                f"회원명: {m.get('회원명', '')}",
+                f"회원번호: {m.get('회원번호', '')}",
+            ]
+            if m.get("휴대폰번호"):
+                parts.append(f"휴대폰번호: {m['휴대폰번호']}")
+            if m.get("특수번호"):
+                parts.append(f"특수번호: {m['특수번호']}")
+            if m.get("코드"):
+                parts.append(f"코드: {m['코드']}")
+            lines.append(", ".join(parts))
+
+        if offset + limit < len(filtered):
             lines.append("--- 다음 있음 ---")
 
-        response_text = "\n".join(lines) if lines else "조건에 맞는 회원이 없습니다."
+        response_text = "\n".join(lines)
         return Response(response_text, mimetype='text/plain')
 
     except Exception as e:
         return Response(f"[서버 오류] {str(e)}", status=500)
-
-
+    
 
 
 

@@ -4,6 +4,8 @@ from utils.common import now_kst, parse_dt, match_condition
 from utils.sheets import get_worksheet
 from datetime import timedelta
 from utils.common import parse_dt, is_match
+# ===== project: utils =====
+from utils.clean_content import clean_content
 
 
 # ======================================================================================

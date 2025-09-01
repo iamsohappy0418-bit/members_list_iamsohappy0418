@@ -19,10 +19,6 @@ from .sheets import (
     delete_row,
 )
 
-# API / HTTP 유틸
-
-
-
 # 문자열 처리
 from .clean_content import clean_content
 
@@ -32,7 +28,6 @@ from .openai_utils import (
     parse_order_from_text,
 )
 
-
 # 메모 검색/출력 유틸
 from .memo_utils import (
     get_memo_results,
@@ -40,15 +35,11 @@ from .memo_utils import (
     filter_results_by_member,
 )
 
-
-
-
-
-
-
-
-
-
+# 회원 자연어 검색 유틸
+from .member_query_parser import (
+    infer_member_field,
+    parse_natural_query_multi,
+)
 
 
 __all__ = [
@@ -59,9 +50,6 @@ __all__ = [
     "get_sheet", "get_worksheet", "get_member_sheet", "get_product_order_sheet",
     "append_row", "update_cell", "safe_update_cell", "delete_row",
 
-    # api/http
- 
-
     # clean_content
     "clean_content",
 
@@ -71,6 +59,6 @@ __all__ = [
     # memo_utils
     "get_memo_results", "format_memo_results", "filter_results_by_member",
 
-
-
+    # member_query_parser
+    "infer_member_field", "parse_natural_query_multi",
 ]
