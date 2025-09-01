@@ -23,22 +23,17 @@ from config import (
 from utils import (
     # 날짜/시간
     now_kst, process_order_date, parse_dt,
-
     # 문자열 정리 및 보조
     clean_tail_command, clean_value_expression, clean_content,
     remove_josa, remove_spaces, split_to_parts,
     is_match, match_condition,
-
     # 시트 관련
     get_sheet, get_worksheet, get_member_sheet, get_product_order_sheet, get_commission_sheet,
     append_row, update_cell, safe_update_cell, delete_row,
-
     # OpenAI 연동
     extract_order_from_uploaded_image, parse_order_from_text,
-
     # 메모 관련
     get_memo_results, format_memo_results, filter_results_by_member,
-
     # 회원 자연어 검색
     infer_member_field, parse_natural_query_multi,
 )
@@ -173,15 +168,6 @@ def debug_sheets():
         }), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
-
-
-    
-
-# ============================================================
-# **공통 자동 분기 함수**
-# ============================================================
-
 
 
 
