@@ -13,7 +13,7 @@ from flask_cors import CORS
 
 from itertools import chain
 from utils import parse_natural_query_multi, infer_member_field
-
+from utils.memo_utils import format_memo_results
 
 
 # ===== project: config =====
@@ -1450,12 +1450,7 @@ def save_memo_route():
 def add_counseling_route():
     """
     상담/개인/활동 일지 저장 API (자연어 전용)
-    📌 설명:
-    자연어 요청문을 파싱하여 상담일지/개인일지/활동일지 시트에 저장합니다.
-    📥 입력(JSON 예시):
-    {
-      "요청문": "이태수 상담일지 저장 오늘부터 슬림바디 다시 시작"
-    }
+    예: {"요청문": "이태수 상담일지 저장 오늘부터 슬림바디 다시 시작"}
     """
     try:
         data = request.get_json(silent=True) or {}
@@ -1463,23 +1458,51 @@ def add_counseling_route():
 
         match = re.search(r"([가-힣]{2,10})\s*(상담일지|개인일지|활동일지)\s*저장", text)
         if not match:
-            return jsonify({"status": "error", "error": "회원명 또는 일지종류를 인식할 수 없습니다."}), 400
+            return jsonify({
+                "status": "error",
+                "message": "❌ 회원명 또는 일지종류를 인식할 수 없습니다."
+            }), 400
 
         member_name = match.group(1).strip()
         sheet_type = match.group(2)
 
         content = text.replace(f"{member_name} {sheet_type} 저장", "").strip()
         if not content:
-            return jsonify({"status": "error", "error": "저장할 내용이 비어 있습니다."}), 400
+            return jsonify({
+                "status": "error",
+                "message": "❌ 저장할 내용이 비어 있습니다."
+            }), 400
 
         ok = save_memo(sheet_type, member_name, content)
         if ok:
-            return jsonify({"status": "success", "message": f"{member_name}님의 {sheet_type} 저장 완료"}), 201
-        return jsonify({"status": "error", "error": "시트 저장에 실패했습니다."}), 500
+            now_str = now_kst().strftime("%Y-%m-%d %H:%M")
+
+            # ✅ 내용 길이 제한 (50자까지만 읽어주고 나머지는 '…' 처리)
+            max_len = 50
+            preview = content if len(content) <= max_len else content[:max_len] + "…"
+
+            return jsonify({
+                "status": "success",
+                "message": (
+                    f"✅ {member_name}님의 {sheet_type}가 저장되었습니다.\n"
+                    f"날짜: {now_str}\n"
+                    f"내용: {preview}"
+                )
+            }), 201
+
+        return jsonify({
+            "status": "error",
+            "message": "❌ 시트 저장에 실패했습니다."
+        }), 500
 
     except Exception as e:
         traceback.print_exc()
-        return jsonify({"status": "error", "error": str(e)}), 500
+        return jsonify({
+            "status": "error",
+            "message": f"[서버 오류] {str(e)}"
+        }), 500
+
+
 
 # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 # ======================================================================================
@@ -1512,9 +1535,9 @@ def memo_save_auto():
 
     return jsonify({
         "status": "error",
-        "message": "❌ 입력이 올바르지 않습니다. "
-                   "자연어는 '요청문/text', JSON은 '일지종류/회원명/내용'을 포함해야 합니다."
+        "message": "❌ 입력이 올바르지 않습니다.\n자연어는 '요청문/text', JSON은 '일지종류/회원명/내용'을 포함해야 합니다."
     }), 400
+
 
 
 
@@ -1636,13 +1659,18 @@ def search_memo():
 
         # ✅ 최신순 정렬
         try:
+
+
             all_results.sort(
                 key=lambda x: datetime.strptime(
-                    x.get("작성일자", "1900-01-01 00:00"),
-                    "%Y-%m-%d %H:%M"
+                    str(x.get("날짜", "1900-01-01")).split()[0],
+                    "%Y-%m-%d"
                 ),
                 reverse=True
             )
+
+
+
         except Exception:
             pass
 
@@ -1772,12 +1800,16 @@ def search_memo_from_text():
 
     # ✅ 최신순 정렬
     try:
+
+
         all_results.sort(
             key=lambda x: datetime.strptime(
-                x.get("작성일자", "1900-01-01 00:00"), "%Y-%m-%d %H:%M"
+                str(x.get("날짜", "1900-01-01")).split()[0], "%Y-%m-%d"
             ),
             reverse=True
         )
+
+
     except Exception:
         pass
 

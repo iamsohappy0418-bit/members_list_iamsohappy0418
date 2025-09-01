@@ -109,13 +109,18 @@ def search_in_sheet(sheet_name, keywords, search_mode="any",
 # ======================================================================================
 # ✅ 통합 검색 (Core)
 # ======================================================================================
-def search_memo_core(sheet_name, keywords, search_mode="any", member_name=None, limit=20):
+from datetime import datetime
+
+def search_memo_core(sheet_name, keywords, search_mode="any", member_name=None,
+                     start_date=None, end_date=None, limit=20):
     """
     시트에서 메모를 검색하는 핵심 함수
     - sheet_name: "상담일지", "개인일지", "활동일지"
     - keywords: ["중국", "세미나"]
     - search_mode: "동시검색" 또는 "any"
-    - member_name: "이태수" 등
+    - member_name: 특정 회원명 필터링
+    - start_date, end_date: 검색 날짜 범위 (YYYY-MM-DD)
+    - limit: 최대 결과 개수
     """
     results = []
     sheet = get_worksheet(sheet_name)
@@ -125,30 +130,60 @@ def search_memo_core(sheet_name, keywords, search_mode="any", member_name=None, 
 
     rows = sheet.get_all_records()
 
-    for row in rows:
-        # ✅ 1. 본문 clean 처리
-        content = clean_content(row.get("내용", ""), member_name).lower()
-        member = row.get("회원명", "").strip()
+    # ✅ 날짜 범위 파싱
+    start_dt = None
+    end_dt = None
+    try:
+        if start_date:
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+        if end_date:
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+    except Exception:
+        pass
 
-        # ✅ 2. 작성자 필터
+    for row in rows:
+        content = str(row.get("내용", "")).strip()
+        member = str(row.get("회원명", "")).strip()
+        date_str = str(row.get("날짜", "")).strip()
+
+        # ✅ 회원명 필터
         if member_name and member != member_name:
             continue
 
-        # ✅ 3. 키워드 clean 처리
-        clean_keywords = [clean_content(k, member_name).lower() for k in keywords if k]
+        # ✅ 날짜 범위 필터
+        if date_str:
+            try:
+                row_date = datetime.strptime(date_str.split()[0], "%Y-%m-%d")
+                if start_dt and row_date < start_dt:
+                    continue
+                if end_dt and row_date > end_dt:
+                    continue
+            except Exception:
+                pass
 
-        # ✅ 4. 키워드 매칭
-        if not is_match(content, clean_keywords, member_name, search_mode):
-            continue
+        # ✅ 키워드 매칭
+        clean_keywords = [k.strip().lower() for k in keywords if k]
+        content_lower = content.lower()
 
-        results.append(row)
+        if search_mode == "동시검색":
+            if not all(k in content_lower for k in clean_keywords):
+                continue
+        else:  # any
+            if not any(k in content_lower for k in clean_keywords):
+                continue
+
+        # ✅ 결과 추가
+        results.append({
+            "날짜": date_str,
+            "회원명": member,
+            "내용": content,
+            "일지종류": sheet_name
+        })
 
         if len(results) >= limit:
             break
 
     return results
-
-
 
 
 
