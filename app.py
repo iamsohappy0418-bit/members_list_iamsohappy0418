@@ -1594,7 +1594,7 @@ def search_memo():
         "member_name": "이태수",
         "start_date": "2023-01-01",
         "end_date": "2023-12-31",
-        "limit": 20
+        "limit": 200
     }
     """
     try:
@@ -1606,7 +1606,7 @@ def search_memo():
         member_name = data.get("member_name")
         start_date = data.get("start_date")
         end_date = data.get("end_date")
-        limit = int(data.get("limit", 20)) or 20  # 기본값 20
+        limit = int(data.get("limit", 200)) or 200  # ✅ 기본값 200
 
         # ✅ 검색할 시트 결정
         if sheet == "상담일지":
@@ -1618,6 +1618,7 @@ def search_memo():
         else:
             sheet_names = ["상담일지", "개인일지", "활동일지"]
 
+        # ✅ 전체 검색 결과 모으기
         all_results = []
         for sheet_name in sheet_names:
             partial = search_memo_core(
@@ -1625,11 +1626,15 @@ def search_memo():
                 keywords=keywords,
                 search_mode=search_mode,
                 member_name=member_name,
-                limit=limit
+                start_date=start_date,
+                end_date=end_date,
+                limit=9999   # ✅ 충분히 크게 해서 먼저 다 가져옴
             )
+            for p in partial:
+                p["일지종류"] = sheet_name
             all_results.extend(partial)
 
-        # ✅ 정렬 (기본 최신순)
+        # ✅ 최신순 정렬
         try:
             all_results.sort(
                 key=lambda x: datetime.strptime(
@@ -1641,8 +1646,25 @@ def search_memo():
         except Exception:
             pass
 
-        has_more = len(all_results) > limit
-        results = all_results[:limit]
+        # ✅ format_memo_results 적용
+        formatted = format_memo_results(all_results)
+
+        # ✅ 페이지네이션 적용
+        for key in formatted:
+            formatted[key] = formatted[key][:limit]
+
+        # ✅ 텍스트 블록 변환
+        icons = {"활동일지": "🗂", "상담일지": "📂", "개인일지": "📒"}
+        text_blocks = []
+        for sheet_name in ["활동일지", "상담일지", "개인일지"]:
+            entries = formatted.get(sheet_name, [])
+            if entries:
+                block = [f"{icons[sheet_name]} {sheet_name}"]
+                block.extend(entries)
+                text_blocks.append("\n".join(block))
+        response_text = "\n\n".join(text_blocks)
+
+        has_more = any(len(v) > limit for v in formatted.values())
 
         return jsonify({
             "status": "success",
@@ -1651,7 +1673,8 @@ def search_memo():
             "search_mode": search_mode,
             "member_name": member_name,
             "limit": limit,
-            "results": results,
+            "results": formatted,
+            "formatted_text": response_text,
             "has_more": has_more
         }), 200
 
@@ -1661,6 +1684,7 @@ def search_memo():
             "status": "error",
             "message": str(e)
         }), 500
+
 
 
 
@@ -1682,7 +1706,7 @@ def search_memo_from_text():
     """
     data = request.get_json(silent=True) or {}
     text = (data.get("text") or "").strip()
-    limit = int(data.get("limit", 20))
+    limit = int(data.get("limit", 200))   # ✅ 기본 limit 200으로 설정
     offset = int(data.get("offset", 0))
     detail = data.get("detail", False)
 
@@ -1757,26 +1781,21 @@ def search_memo_from_text():
     except Exception:
         pass
 
-    # ✅ 일지별 그룹핑 (출력 순서 고정)
-    grouped = {"활동일지": [], "상담일지": [], "개인일지": []}
-    for item in all_results:
-        if item["일지종류"] in grouped:
-            grouped[item["일지종류"]].append(item)
+    # ✅ format_memo_results 적용
+    formatted = format_memo_results(all_results)
 
     # ✅ 페이지네이션 적용
-    for key in grouped:
-        grouped[key] = grouped[key][offset:offset + limit]
+    for key in formatted:
+        formatted[key] = formatted[key][offset:offset + limit]
 
     # ✅ 텍스트 블록 변환
     icons = {"활동일지": "🗂", "상담일지": "📂", "개인일지": "📒"}
     text_blocks = []
     for sheet_name in ["활동일지", "상담일지", "개인일지"]:
-        entries = grouped.get(sheet_name, [])
+        entries = formatted.get(sheet_name, [])
         if entries:
             block = [f"{icons[sheet_name]} {sheet_name}"]
-            for e in entries:
-                line = f"· ({e.get('작성일자')}) {e.get('내용')} — {e.get('회원명')}"
-                block.append(line)
+            block.extend(entries)
             text_blocks.append("\n".join(block))
     response_text = "\n\n".join(text_blocks)
 
@@ -1788,17 +1807,47 @@ def search_memo_from_text():
             "member_name": member_name,
             "search_mode": search_mode,
             "keywords": keywords,
-            "results": grouped,
-            "has_more": any(len(v) > limit for v in grouped.values())
+            "results": formatted,
+            "has_more": any(len(v) > limit for v in formatted.values())
         }), 200
     else:
         return jsonify({
             "status": "success",
             "keywords": keywords,
             "formatted_text": response_text,
-            "has_more": any(len(v) > limit for v in grouped.values())
+            "has_more": any(len(v) > limit for v in formatted.values())
         }), 200
 
+
+
+
+
+
+# @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+# ✅ 결과 포맷 함수 (회원명 기준)
+def format_memo_results(results):
+    formatted = {
+        "활동일지": [],
+        "상담일지": [],
+        "개인일지": []
+    }
+    for item in results:
+        date = item.get("작성일자") or "날짜 없음"
+        member_name = item.get("회원명") or "회원명 없음"
+        content = item.get("내용") or ""
+        mode = item.get("일지종류") or "전체"
+
+        if "활동" in mode:
+            formatted["활동일지"].append(f"· ({date}) {content} — {member_name}")
+        elif "상담" in mode:
+            formatted["상담일지"].append(f"· ({date}) {content} — {member_name}")
+        elif "개인" in mode:
+            formatted["개인일지"].append(f"· ({date}) {content} — {member_name}")
+        else:
+            formatted["활동일지"].append(f"· ({date}) {content} — {member_name}")
+
+    ordered = ["활동일지", "상담일지", "개인일지"]
+    return {key: formatted[key] for key in ordered}
 
 
 
