@@ -1,63 +1,20 @@
-import re
+"""
+parser/clean_utils.py
+문자열 정리 유틸 (parser 전용 wrapper)
 
+⚠️ 실제 구현은 utils.text_cleaner 에 있으며,
+   parser 쪽에서 clean_utils 를 import 해도 그대로 동작하도록
+   호환성 레이어 역할만 수행합니다.
+"""
 
+from utils.text_cleaner import (
+    clean_tail_command,
+    clean_value_expression,
+    clean_content,
+)
 
-# ======================================================================================
-# ✅ 꼬리 명령어 정제
-# ======================================================================================
-def clean_tail_command(text: str) -> str:
-    """
-    ✅ 요청문 끝에 붙은 불필요한 꼬리 명령어 제거
-    - 조사("로", "으로")와 함께 붙은 경우도 제거
-    - 흔한 명령형 꼬리 ("수정해줘", "변경", "바꿔줘", "해주세요" 등) 커버
-    """
-    if not text:
-        return text
-    s = text.strip()
-
-    # 자주 쓰이는 꼬리 문구들
-    tail_phrases = [
-        "정확히 수정해줘", "수정해줘", "변경해줘", "바꿔줘",
-        "수정", "변경", "바꿔", "삭제",
-        "저장해줘", "기록", "입력", "해주세요", "해줘", "남겨"
-    ]
-
-    # 패턴: (조사 "로/으로" + 공백) + 꼬리 문구 + 특수문자
-    for phrase in tail_phrases:
-        pattern = rf"(?:\s*(?:으로|로))?\s*{re.escape(phrase)}\s*[^\w가-힣]*$"
-        s = re.sub(pattern, "", s)
-
-    return s.strip()
-
-
-
-
-
-def clean_value_expression(text: str) -> str:
-    """
-    ✅ 값에 붙은 조사/불필요한 문자/꼬리 명령어 제거
-    - "서울로" → "서울"
-    - "010-1111-2222번" → "010-1111-2222"
-    - "12345," → "12345"
-    - "주소 서울 수정해 줘" → "주소 서울"
-    """
-    if not text:
-        return text
-    s = text.strip()
-
-    # 1) 일반적인 조사 제거 (정규식)
-    s = re.sub(r"(으로|로|으로의|로의|으로부터|로부터|은|는|이|가|을|를|와|과|에서|에)$", "", s)
-
-    # 2) 자주 나오는 꼬리 명령어 제거 (particles 리스트 기반)
-    particles = ['값을', '수정해 줘', '수정해줘', '변경해 줘', '변경해줘', '삭제해 줘', '삭제해줘']
-    for p in particles:
-        pattern = rf'({p})\s*$'
-        s = re.sub(pattern, '', s)
-
-    # 3) 불필요한 기호 제거
-    s = s.strip(" ,.")
-
-    return s
-
-
-
+__all__ = [
+    "clean_tail_command",
+    "clean_value_expression",
+    "clean_content",
+]

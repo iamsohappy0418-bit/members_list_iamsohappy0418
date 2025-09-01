@@ -2,6 +2,9 @@ from typing import List, Dict, Any
 from utils.sheets import get_commission_sheet, get_worksheet, safe_update_cell
 from parser.commission_parser import clean_commission_data
 
+
+
+
 SHEET_NAME = "후원수당"
 COLUMNS = ["지급일자", "회원명", "후원수당", "비고"]
 

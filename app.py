@@ -11,11 +11,6 @@ import requests
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 
-from itertools import chain
-from utils import parse_natural_query_multi, infer_member_field
-from utils.memo_utils import format_memo_results
-
-
 # ===== project: config =====
 from config import (
     API_URLS, HEADERS,
@@ -24,51 +19,63 @@ from config import (
     SHEET_MAP,
 )
 
-# ===== project: utils =====
-from utils.common import (
-    now_kst,
-    process_order_date,
-    remove_josa,
-    remove_spaces,
-    split_to_parts,
-    parse_dt,      
-    is_match,       
+# ===== project: utils (통합된 __init__.py 통해 관리) =====
+from utils import (
+    # 날짜/시간
+    now_kst, process_order_date, parse_dt,
+
+    # 문자열 정리 및 보조
+    clean_tail_command, clean_value_expression, clean_content,
+    remove_josa, remove_spaces, split_to_parts,
+    is_match, match_condition,
+
+    # 시트 관련
+    get_sheet, get_worksheet, get_member_sheet, get_product_order_sheet, get_commission_sheet,
+    append_row, update_cell, safe_update_cell, delete_row,
+
+    # OpenAI 연동
+    extract_order_from_uploaded_image, parse_order_from_text,
+
+    # 메모 관련
+    get_memo_results, format_memo_results, filter_results_by_member,
+
+    # 회원 자연어 검색
+    infer_member_field, parse_natural_query_multi,
 )
-from utils.sheets import (
-    get_sheet,
-    get_worksheet,
-    get_member_sheet,
-    get_product_order_sheet,
-    get_commission_sheet,
-    append_row,
-    update_cell,
-    safe_update_cell,
-    delete_row,
-)
-from utils.clean_content import clean_content
+
 from utils.http import call_memberslist_add_orders, call_impact_sync
-from utils.openai_utils import (
-    extract_order_from_uploaded_image,
-    
-)
 
-from utils import format_memo_results
-
-
-# ===== parser: member =====
 # ===== parser =====
 from parser import (
     parse_registration,
     parse_request_and_update,
     parse_natural_query,
     parse_deletion_request,
-  
     parse_memo,
     parse_commission,
     guess_intent,
 )
 
+from parser.order_parser import (
+    parse_order_text,
+    parse_order_text_rule,
+    parse_order_from_text,
+)
 
+from parser.memo_parser import (
+    parse_memo,
+    parse_request_line,
+)
+
+from parser.commission_parser import (
+    process_date,
+    clean_commission_data,
+)
+
+from parser.intent_parser import guess_intent
+from parser.field_map import field_map
+
+# ===== service =====
 from service.member_service import (
     find_member_internal,
     clean_member_data,
@@ -78,12 +85,6 @@ from service.member_service import (
     delete_member_field_nl_internal,
 )
 
-# ===== parser: order =====
-from parser.order_parser import (
-    parse_order_text,
-    parse_order_text_rule,
-    parse_order_from_text,
-)
 from service.order_service import (
     addOrders,
     handle_order_save,
@@ -97,35 +98,19 @@ from service.order_service import (
     save_order_to_sheet,
 )
 
-# ===== parser: memo =====
-from parser.memo_parser import (
-    parse_memo,
-    parse_request_line,
-)
 from service.memo_service import (
     save_memo,
     find_memo,
     search_in_sheet,
-    search_memo_core 
+    search_memo_core,
 )
 
-# ===== parser: commission =====
-from parser.commission_parser import (
-    process_date,
-    clean_commission_data,
-)
 from service.commission_service import (
     find_commission,
     register_commission,
     update_commission,
     delete_commission,
 )
-
-# ===== parser: intent =====
-from parser.intent_parser import guess_intent
-
-# ===== field map =====
-from parser.field_map import field_map
 
 
 

@@ -1,9 +1,8 @@
 import re
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, List
 
 from parser.field_map import field_map
-from parser.clean_utils import clean_tail_command, clean_value_expression
-from typing import List
+from utils import clean_tail_command, clean_value_expression
 
 
 

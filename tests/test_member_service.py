@@ -1,5 +1,5 @@
 import pytest
-import member_service  # utils/member_service.py
+from service import member_service
 
 
 # ==============================

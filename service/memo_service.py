@@ -1,12 +1,24 @@
 import traceback
-from utils.sheets import get_counseling_sheet, get_personal_memo_sheet, get_activity_log_sheet
-from utils.common import now_kst, parse_dt, match_condition
-from utils.sheets import get_worksheet
-from datetime import timedelta
-from utils.common import parse_dt, is_match
+from datetime import datetime, timedelta
+
 # ===== project: utils =====
-from utils.clean_content import clean_content
-from datetime import datetime
+from utils import (
+    # 시간/날짜
+    now_kst, parse_dt,
+
+    # 문자열 정리
+    clean_tail_command, clean_value_expression, clean_content,
+
+    # 시트
+    get_counseling_sheet, get_personal_memo_sheet, get_activity_log_sheet, get_worksheet,
+
+    # 키워드 매칭
+    is_match, match_condition,
+)
+
+
+
+
 
 # ======================================================================================
 # ✅ 메모 저장

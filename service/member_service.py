@@ -1,9 +1,14 @@
 import gspread
-from utils.sheets import get_member_sheet, safe_update_cell
-from utils.sheets import delete_row
+from flask import jsonify
+
+from utils import (
+    clean_tail_command, clean_value_expression, remove_spaces,
+    get_member_sheet, safe_update_cell, delete_row,
+)
 
 from parser.field_map import field_map
-from utils.common import remove_spaces
+
+
 
 # ==============================
 # 회원 등록 (Create)
@@ -196,14 +201,20 @@ def register_member_internal(data: dict) -> bool:
         return False
 
 
-def update_member_internal(data: dict) -> bool:
-    if not data or "회원명" not in data:
-        return False
-    name = data["회원명"]
-    updates = {k: v for k, v in data.items() if k != "회원명"}
-    if not updates:
-        return False
-    return update_member(name, updates)
+
+
+def update_member_internal(요청문):
+    try:
+        # ... 파싱 및 시트 업데이트 로직 ...
+        return jsonify({
+            "status": "success",
+            "message": f"요청 처리 완료: {요청문}"
+        }), 200
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
 
 
 

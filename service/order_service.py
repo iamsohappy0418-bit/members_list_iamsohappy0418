@@ -2,10 +2,8 @@ import re
 import json
 from typing import Dict, Any
 
-# ===== project: utils =====
-from utils.common import process_order_date
-from utils.openai_utils import parse_order_from_text
-from utils.sheets import get_order_sheet
+from utils import process_order_date, parse_order_from_text, get_product_order_sheet
+
 
 
 
