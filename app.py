@@ -19,25 +19,32 @@ from config import (
     SHEET_MAP,
 )
 
-# ===== project: utils (통합된 __init__.py 통해 관리) =====
+# ===== project: utils (공용 함수는 __init__.py 통해 관리) =====
 from utils import (
     # 날짜/시간
     now_kst, process_order_date, parse_dt,
     # 문자열 정리 및 보조
-    clean_tail_command, clean_value_expression, clean_content,
+    clean_content,
     remove_josa, remove_spaces, split_to_parts,
     is_match, match_condition,
-    # 시트 관련
-    get_sheet, get_worksheet, get_member_sheet, get_product_order_sheet, get_commission_sheet,
+    # 시트 기본
+    get_sheet, get_worksheet, get_member_sheet,
     append_row, update_cell, safe_update_cell, delete_row,
-    # OpenAI 연동
-    extract_order_from_uploaded_image, parse_order_from_text,
     # 메모 관련
     get_memo_results, format_memo_results, filter_results_by_member,
-    # 회원 자연어 검색
-    infer_member_field, parse_natural_query_multi,
 )
 
+# ===== project: utils (도메인 전용 → 직접 import) =====
+from utils.text_cleaner import clean_tail_command, clean_value_expression
+from utils.sheets import (
+    get_product_order_sheet,
+    get_commission_sheet,
+    get_counseling_sheet,
+    get_personal_memo_sheet,
+    get_activity_log_sheet,
+)
+from utils.openai_utils import extract_order_from_uploaded_image, parse_order_from_text
+from utils.member_query_parser import infer_member_field, parse_natural_query_multi
 from utils.http import call_memberslist_add_orders, call_impact_sync
 
 # ===== parser =====
@@ -1453,7 +1460,12 @@ def add_counseling_route():
         member_name = match.group(1).strip()
         sheet_type = match.group(2)
 
-        content = text.replace(f"{member_name} {sheet_type} 저장", "").strip()
+        # ✅ "저장" 또는 "저장."까지 포함된 부분 제거
+        pattern = rf"{re.escape(member_name)}\s*{sheet_type}\s*저장\.?"
+        raw_content = re.sub(pattern, "", text).strip()
+
+        # ✅ 불필요한 기호 + 회원명 제거
+        content = clean_content(raw_content, member_name=member_name)
         if not content:
             return jsonify({
                 "status": "error",
@@ -1464,7 +1476,7 @@ def add_counseling_route():
         if ok:
             now_str = now_kst().strftime("%Y-%m-%d %H:%M")
 
-            # ✅ 내용 길이 제한 (50자까지만 읽어주고 나머지는 '…' 처리)
+            # ✅ 내용 길이 제한 (50자까지만 표시)
             max_len = 50
             preview = content if len(content) <= max_len else content[:max_len] + "…"
 
@@ -1488,6 +1500,7 @@ def add_counseling_route():
             "status": "error",
             "message": f"[서버 오류] {str(e)}"
         }), 500
+    
 
 
 
