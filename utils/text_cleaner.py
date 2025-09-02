@@ -67,8 +67,10 @@ def clean_content(text: str, member_name: str = None) -> str:
     # 불필요한 앞뒤 기호 제거
     s = text.strip(" \t:：,，.'\"“”‘’")
 
-    # 회원명 제거
+    # 회원명 제거 (회원명 + 선택적 '님' + 기호 포함)
     if member_name:
-        s = s.replace(member_name, "")
+        pattern = rf"{re.escape(member_name)}\s*([:：,.]|\s|님)*"
+        s = re.sub(pattern, "", s)
 
     return s.strip()
+
