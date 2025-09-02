@@ -57,6 +57,8 @@ def clean_value_expression(text: str) -> str:
 # ======================================================================================
 # ✅ 본문 정제 (회원명/불필요 단어 제거)
 # ======================================================================================
+import re
+
 def clean_content(text: str, member_name: str = None) -> str:
     """
     메모/요청문에서 불필요한 기호, 회원명 등을 제거한 정제 문자열 반환
@@ -67,10 +69,9 @@ def clean_content(text: str, member_name: str = None) -> str:
     # 불필요한 앞뒤 기호 제거
     s = text.strip(" \t:：,，.'\"“”‘’")
 
-    # 회원명 제거 (회원명 + 선택적 '님' + 기호 포함)
+    # 회원명 + 선택적 '님' + 기호 제거 (예: "이태수.", "이태수 .", "이태수님," → "")
     if member_name:
-        pattern = rf"{re.escape(member_name)}\s*([:：,.]|\s|님)*"
+        pattern = rf"{re.escape(member_name)}\s*(님)?\s*[:：,，.]*"
         s = re.sub(pattern, "", s)
 
     return s.strip()
-
