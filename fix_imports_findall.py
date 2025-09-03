@@ -2,7 +2,7 @@ import pathlib
 
 # ✅ 잘못된 import 패턴들
 TARGETS = [
-     "content = text.replace",
+     "format_memo_results",
     
     # 필요한 만큼 추가...
 ]

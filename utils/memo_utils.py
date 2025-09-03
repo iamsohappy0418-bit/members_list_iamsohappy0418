@@ -17,8 +17,8 @@ def get_memo_results(query):
 # 📌 결과 포맷터 (개인일지 / 상담일지 / 활동일지 블록 구분)
 def format_memo_results(results):
     """
-    검색된 메모 결과를 정리해서 문자열 블록으로 반환
-    - 날짜는 YYYY-MM-DD 형식으로만 출력
+    검색된 메모 결과를 정리해서 문자열 블록과 카테고리별 리스트로 반환
+    - 날짜는 YYYY-MM-DD 형식으로 출력
     - 정렬은 하루 단위 최신순
     - 출력 순서: 활동일지 → 상담일지 → 개인일지
     - 출력 형식: · (YYYY-MM-DD, 회원명) 내용
@@ -64,14 +64,24 @@ def format_memo_results(results):
     if personal:
         output_text += "📒 개인일지\n" + "\n".join(personal) + "\n\n"
 
+    # ✅ 항상 text 포함할 변수 생성
+    human_readable_text = output_text.strip()
+
     return {
-        "text": output_text.strip(),
+        "text": human_readable_text,   # 최상위 전체 블록
         "lists": {
             "활동일지": activity,
             "상담일지": counsel,
-            "개인일지": personal
+            "개인일지": personal,
+            "text": human_readable_text  # ✅ lists 안에도 text 포함
         }
     }
+
+
+
+
+
+
 
 
 def filter_results_by_member(results, member_name):

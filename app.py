@@ -1782,10 +1782,11 @@ def search_memo():
 @app.route("/search_memo_from_text", methods=["POST"])
 def search_memo_from_text():
     """
-    자연어 메모 검색 API (무조건 텍스트 블록만 반환)
+    자연어 메모 검색 API
     📌 설명:
-    - 항상 사람이 읽기 좋은 텍스트 블록만 JSON {"text": "..."} 형태로 반환
-    - 클라이언트(iPad)는 그대로 text를 표시하면 됨
+    - 항상 사람이 읽기 좋은 블록(text)과 카테고리별 분리 정보(lists)를 함께 반환
+    - iPad 화면은 text만 그대로 표시하면 되고
+    - 카테고리별 필터링/탭 기능은 lists를 사용하면 됨
     """
     data = request.get_json(silent=True) or {}
     text = (data.get("text") or "").strip()
@@ -1863,51 +1864,19 @@ def search_memo_from_text():
 
     # ✅ format_memo_results 적용
     formatted = format_memo_results(all_results)
-    response_text = formatted["text"]  # 🔥 무조건 text 블록만 사용
 
-    # ✅ 최종 응답: {"text": "..."}
-    return jsonify({"text": response_text}), 200
+    # ✅ 최종 응답: text + lists 동시 제공
+    return jsonify({
+        "status": "success",
+        "text": formatted["text"],      # 사람이 읽기 좋은 전체 블록
+        "lists": formatted["lists"],    # 카테고리별 분리 정보
+        "keywords": keywords,
+        "member_name": member_name,
+        "sheets": sheet_names,
+        "search_mode": search_mode
+    }), 200
 
 
-
-
-
-
-
-
-
-
-# @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-# ✅ 결과 포맷 함수 (회원명 기준)
-def format_memo_results(results):
-    formatted = {
-        "활동일지": [],
-        "상담일지": [],
-        "개인일지": []
-    }
-    for item in results:
-        date = item.get("날짜") or ""
-        member_name = item.get("회원명") or ""
-        content = item.get("내용") or ""
-        mode = item.get("일지종류") or "전체"
-
-        # 날짜/회원명 표시 조건 처리
-        date_str = f"({date}) " if date else ""
-        member_str = f" — {member_name}" if member_name else ""
-
-        entry = f"· {date_str}{content}{member_str}"
-
-        if "활동" in mode:
-            formatted["활동일지"].append(entry)
-        elif "상담" in mode:
-            formatted["상담일지"].append(entry)
-        elif "개인" in mode:
-            formatted["개인일지"].append(entry)
-        else:
-            formatted["활동일지"].append(entry)
-
-    ordered = ["활동일지", "상담일지", "개인일지"]
-    return {key: formatted[key] for key in ordered}
 
 
 
