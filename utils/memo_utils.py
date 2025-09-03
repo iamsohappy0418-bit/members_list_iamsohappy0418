@@ -1,6 +1,6 @@
 # utils/memo_utils.py
 from datetime import datetime
-
+import logging
 
 
 # 📌 예시 데이터 (실제 환경에서는 API 결과로 대체)
@@ -91,4 +91,63 @@ def filter_results_by_member(results, member_name):
     if not member_name:
         return results
     return [r for r in results if r.get("회원명") == member_name]
+
+
+
+
+
+
+
+
+# 로거 설정
+logger = logging.getLogger("memo_utils")
+logger.setLevel(logging.DEBUG)
+
+# 콘솔 출력 핸들러 추가
+ch = logging.StreamHandler()
+ch.setLevel(logging.DEBUG)
+
+# 로그 포맷 지정
+formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s')
+ch.setFormatter(formatter)
+logger.addHandler(ch)
+
+
+
+
+
+
+
+
+async def handle_search_memo(data: dict):
+    """
+    searchMemo와 searchMemoFromText 자동 분기 처리 + 로깅
+    (동기 함수 버전 → await 제거)
+    """
+    # 1) 자연어 요청 (text 필드가 있는 경우)
+    if "text" in data:
+        query = data["text"]
+        logger.info(f"[FromText-Direct] text 필드 감지 → searchMemoFromText 실행 | query='{query}'")
+        return searchMemoFromText({"text": query})   # ✅ await 제거
+
+    # 2) keywords가 없는 경우 → 자연어 변환
+    if not data.get("keywords"):
+        mode = data.get("mode", "전체")
+        keywords_text = " ".join(data.get("keywords", [])) if data.get("keywords") else ""
+        search_mode_text = "동시" if data.get("search_mode") == "동시검색" else ""
+        date_text = ""
+        if data.get("start_date") and data.get("end_date"):
+            date_text = f"{data['start_date']}부터 {data['end_date']}까지"
+
+        query = f"{mode}일지 검색 {keywords_text} {search_mode_text} {date_text}".strip()
+        logger.info(f"[FromText-Converted] keywords 없음 → query 변환 후 searchMemoFromText 실행 | query='{query}'")
+        return searchMemoFromText({"text": query})   # ✅ await 제거
+
+    # 3) 정상 content 기반 요청 → searchMemo 실행
+    logger.info(f"[Content-Mode] keywords 감지 → searchMemo 실행 | keywords={data.get('keywords')}, mode={data.get('mode')}")
+    return searchMemo(data)   # ✅ await 제거
+
+
+
+
 

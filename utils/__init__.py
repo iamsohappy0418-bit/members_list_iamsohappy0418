@@ -48,6 +48,8 @@ from .memo_utils import (
     get_memo_results,
     format_memo_results,
     filter_results_by_member,
+    handle_search_memo,   # ✅ 추가
+    
 )
 
 # OpenAI 관련 (주문 파싱 등)
@@ -76,6 +78,7 @@ __all__ = [
 
     # memo_utils
     "get_memo_results", "format_memo_results", "filter_results_by_member",
+    "handle_search_memo",  # ✅ 추가
 
     # openai_utils
     "extract_order_from_uploaded_image", "parse_order_from_text",

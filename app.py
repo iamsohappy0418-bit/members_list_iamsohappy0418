@@ -6,6 +6,7 @@ import base64
 import traceback
 from datetime import datetime, timedelta, timezone
 
+
 # ===== 3rd party =====
 import requests
 from flask import Flask, request, jsonify, Response
@@ -32,6 +33,7 @@ from utils import (
     append_row, update_cell, safe_update_cell, delete_row,
     # 메모 관련
     get_memo_results, format_memo_results, filter_results_by_member,
+    handle_search_memo,  # ✅ 추가
 )
 
 # ===== project: utils (도메인 전용 → 직접 import) =====
@@ -65,7 +67,6 @@ from parser.order_parser import (
 )
 
 from parser.memo_parser import (
-    parse_memo,
     parse_request_line,
 )
 
@@ -114,6 +115,8 @@ from service.commission_service import (
     update_commission,
     delete_commission,
 )
+
+
 
 
 
@@ -1651,114 +1654,37 @@ def memo_find_auto():
 # ✅ API 고급 검색 (content 문자열 기반, 조건식 가능)
 # ======================================================================================
 @app.route("/search_memo", methods=["POST"])
-def search_memo():
+def search_memo_route():
     """
-    메모 고급 검색 API
+    메모 검색 API (자연어 + JSON 파라미터 지원)
     📌 설명:
-    JSON 기반으로 상담/개인/활동 일지를 검색합니다.
-    📥 입력(JSON 예시):
-    {
-        "sheet": "상담일지",       # 상담일지 / 개인일지 / 활동일지 / 전체
-        "keywords": ["중국", "세미나"],
-        "search_mode": "any",    # any | 동시검색
-        "member_name": "이태수",
-        "start_date": "2023-01-01",
-        "end_date": "2023-12-31",
-        "limit": 200
-    }
+    - text 필드가 있으면 자연어 검색 (예: {"text": "전체메모 검색 포항"})
+    - keywords 필드가 있으면 고급 검색 (예: {"keywords": ["중국","세미나"], "search_mode":"동시검색"})
     """
+
     try:
         data = request.get_json(silent=True) or {}
 
-        sheet = data.get("sheet", "전체")
-        keywords = data.get("keywords", [])
-        search_mode = data.get("search_mode", "any")
-        member_name = data.get("member_name")
-        start_date = data.get("start_date")
-        end_date = data.get("end_date")
-        limit = int(data.get("limit", 200)) or 200  # ✅ 기본값 200
+        # ✅ 유틸 함수 실행 (자동 분기)
+        results = handle_search_memo(data)
 
-        # ✅ 검색할 시트 결정
-        if sheet == "상담일지":
-            sheet_names = ["상담일지"]
-        elif sheet == "개인일지":
-            sheet_names = ["개인일지"]
-        elif sheet == "활동일지":
-            sheet_names = ["활동일지"]
-        else:
-            sheet_names = ["상담일지", "개인일지", "활동일지"]
-
-        # ✅ 전체 검색 결과 모으기
-        all_results = []
-        for sheet_name in sheet_names:
-            partial = search_memo_core(
-                sheet_name=sheet_name,
-                keywords=keywords,
-                search_mode=search_mode,
-                member_name=member_name,
-                start_date=start_date,
-                end_date=end_date,
-                limit=9999   # ✅ 충분히 크게 해서 먼저 다 가져옴
-            )
-            for p in partial:
-                p["일지종류"] = sheet_name
-            all_results.extend(partial)
-
-        # ✅ 최신순 정렬
-        try:
-
-
-            all_results.sort(
-                key=lambda x: datetime.strptime(
-                    str(x.get("날짜", "1900-01-01")).split()[0],
-                    "%Y-%m-%d"
-                ),
-                reverse=True
-            )
-
-
-
-        except Exception:
-            pass
-
-        # ✅ format_memo_results 적용
-        formatted = format_memo_results(all_results)
-
-        # ✅ 페이지네이션 적용
-        for key in formatted:
-            formatted[key] = formatted[key][:limit]
-
-        # ✅ 텍스트 블록 변환
-        icons = {"활동일지": "🗂", "상담일지": "📂", "개인일지": "📒"}
-        text_blocks = []
-        for sheet_name in ["활동일지", "상담일지", "개인일지"]:
-            entries = formatted.get(sheet_name, [])
-            if entries:
-                block = [f"{icons[sheet_name]} {sheet_name}"]
-                block.extend(entries)
-                text_blocks.append("\n".join(block))
-        response_text = "\n\n".join(text_blocks)
-
-        has_more = any(len(v) > limit for v in formatted.values())
+        # ✅ 결과 포맷팅 (사람 읽기 좋은 출력 포함)
+        formatted = format_memo_results(results)
 
         return jsonify({
             "status": "success",
-            "sheets": sheet_names,
-            "keywords": keywords,
-            "search_mode": search_mode,
-            "member_name": member_name,
-            "limit": limit,
-            "results": formatted,
-            "formatted_text": response_text,
-            "has_more": has_more
+            "input": data,
+            "results": results,       # 원본 dict 리스트
+            "formatted": formatted    # 사람이 읽기 좋은 블록 + 리스트
         }), 200
 
     except Exception as e:
         traceback.print_exc()
         return jsonify({
             "status": "error",
-            "message": str(e)
+            "message": f"❌ 메모 검색 중 오류: {str(e)}"
         }), 500
+
 
 
 
