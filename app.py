@@ -1782,15 +1782,13 @@ def search_memo():
 @app.route("/search_memo_from_text", methods=["POST"])
 def search_memo_from_text():
     """
-    자연어 메모 검색 API (전체 메모 반환 + 일지 분류 출력 + 순서 고정 + 텍스트/JSON 선택)
+    자연어 메모 검색 API (무조건 텍스트 블록만 반환)
     📌 설명:
-    - 기본 출력: 사람이 읽기 좋은 텍스트 블록
-    - {"detail": true} 옵션 추가 시: JSON 상세 구조 반환
-    - 서버는 전체 메모를 반환하고, 클라이언트(iPad)에서 15개씩 페이징 처리
+    - 항상 사람이 읽기 좋은 텍스트 블록만 JSON {"text": "..."} 형태로 반환
+    - 클라이언트(iPad)는 그대로 text를 표시하면 됨
     """
     data = request.get_json(silent=True) or {}
     text = (data.get("text") or "").strip()
-    detail = data.get("detail", False)
 
     if not text:
         return jsonify({"error": "text가 비어 있습니다."}), 400
@@ -1865,29 +1863,16 @@ def search_memo_from_text():
 
     # ✅ format_memo_results 적용
     formatted = format_memo_results(all_results)
+    response_text = formatted["text"]  # 🔥 무조건 text 블록만 사용
 
-    # ✅ 사람이 읽기 좋은 텍스트 블록 (이미 formatted["text"]에 있음)
-    response_text = formatted["text"]
+    # ✅ 최종 응답: {"text": "..."}
+    return jsonify({"text": response_text}), 200
 
-    # ✅ 분기 응답
-    if detail:
-        return jsonify({
-            "status": "success",
-            "sheets": sheet_names,
-            "member_name": member_name,
-            "search_mode": search_mode,
-            "keywords": keywords,
-            "results": formatted["lists"],  # 카테고리별 리스트
-            "formatted_text": response_text,  # 전체 텍스트 블록
-            "counts": {k: len(v) for k, v in formatted["lists"].items()}
-        }), 200
-    else:
-        return jsonify({
-            "status": "success",
-            "keywords": keywords,
-            "formatted_text": response_text,
-            "counts": {k: len(v) for k, v in formatted["lists"].items()}
-        }), 200
+
+
+
+
+
 
 
 
