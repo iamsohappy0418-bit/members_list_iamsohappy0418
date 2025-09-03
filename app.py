@@ -1521,12 +1521,7 @@ def add_counseling_route():
         member_name = match.group(1).strip()
         sheet_type = match.group(2)
 
-        # ✅ "저장" 또는 "저장."까지 포함된 부분 제거
-        pattern = rf"{re.escape(member_name)}\s*{sheet_type}\s*저장\.?"
-        raw_content = re.sub(pattern, "", text).strip()
-
-        # ✅ 불필요한 기호 + 회원명 제거
-        content = clean_content(raw_content, member_name=member_name)
+        content = text.replace(f"{member_name} {sheet_type} 저장", "").strip()
         if not content:
             return jsonify({
                 "status": "error",
@@ -1537,7 +1532,7 @@ def add_counseling_route():
         if ok:
             now_str = now_kst().strftime("%Y-%m-%d %H:%M")
 
-            # ✅ 내용 길이 제한 (50자까지만 표시)
+            # ✅ 내용 길이 제한 (50자까지만 읽어주고 나머지는 '…' 처리)
             max_len = 50
             preview = content if len(content) <= max_len else content[:max_len] + "…"
 
@@ -2277,6 +2272,21 @@ def commission_find_auto():
 
 
 import html
+
+@app.route("/debug_routes", methods=["GET"])
+def debug_routes():
+    routes = []
+    for rule in app.url_map.iter_rules():
+        func = app.view_functions[rule.endpoint]
+        routes.append({
+            "url": str(rule),
+            "endpoint": rule.endpoint,
+            "methods": list(rule.methods),
+            "function_name": func.__name__,
+            "function_module": func.__module__
+        })
+    return jsonify(routes)
+
 
 @app.route("/debug_routes_table", methods=["GET"])
 def debug_routes_table():
