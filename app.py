@@ -179,10 +179,6 @@ def debug_sheets():
 
 
 
-from flask import Flask, request, jsonify, redirect
-
-app = Flask(__name__)
-
 
 def guess_intent(text: str) -> str:
     """
@@ -236,60 +232,6 @@ def guess_intent_entry():
     }), 400
 
 
-# ✅ 회원 자동 분기
-@app.route("/member_find_auto", methods=["POST"])
-def member_find_auto():
-    text = (request.get_json(silent=True) or {}).get("text", "")
-
-    if any(k in text for k in ["등록", "추가"]):
-        return jsonify({"status": "success", "action": "register_member"})
-    if any(k in text for k in ["수정", "변경", "업데이트"]):
-        return jsonify({"status": "success", "action": "update_member"})
-    if any(k in text for k in ["삭제", "지워", "제거"]):
-        return jsonify({"status": "success", "action": "delete_member"})
-    if any(k in text for k in ["조회", "찾아", "검색", "알려줘"]):
-        return jsonify({"status": "success", "action": "find_member"})
-
-    return jsonify({"status": "error", "message": "❌ 회원 요청 해석 불가"}), 400
-
-
-# ✅ 주문 자동 분기
-@app.route("/order_find_auto", methods=["POST"])
-def order_find_auto():
-    text = (request.get_json(silent=True) or {}).get("text", "")
-
-    if "저장" in text:
-        return jsonify({"status": "success", "action": "save_order"})
-    if any(k in text for k in ["조회", "검색", "찾아"]):
-        return jsonify({"status": "success", "action": "find_order"})
-
-    return jsonify({"status": "error", "message": "❌ 주문 요청 해석 불가"}), 400
-
-
-# ✅ 메모 자동 분기
-@app.route("/memo_find_auto", methods=["POST"])
-def memo_find_auto():
-    text = (request.get_json(silent=True) or {}).get("text", "")
-
-    if any(k in text for k in ["저장", "작성", "기록"]):
-        return jsonify({"status": "success", "action": "save_memo"})
-    if any(k in text for k in ["조회", "검색", "찾아"]):
-        return jsonify({"status": "success", "action": "find_memo"})
-
-    return jsonify({"status": "error", "message": "❌ 메모 요청 해석 불가"}), 400
-
-
-# ✅ 후원수당 자동 분기
-@app.route("/commission_find_auto", methods=["POST"])
-def commission_find_auto():
-    text = (request.get_json(silent=True) or {}).get("text", "")
-
-    if any(k in text for k in ["등록", "추가", "저장"]):
-        return jsonify({"status": "success", "action": "save_commission"})
-    if any(k in text for k in ["조회", "검색", "알려줘"]):
-        return jsonify({"status": "success", "action": "find_commission"})
-
-    return jsonify({"status": "error", "message": "❌ 후원수당 요청 해석 불가"}), 400
 
 
 
