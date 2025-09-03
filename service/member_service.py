@@ -8,7 +8,7 @@ from utils import (
 
 from parser.field_map import field_map
 
-from utils.text_cleaner import build_member_query, get_member_sheet
+
 from parser.member_parser import parse_conditions
 
 
