@@ -291,3 +291,35 @@ def delete_member_field_nl_internal(text: str, fields: list):
 
 
 
+def process_member_query(user_input: str):
+    # 1️⃣ 자연어 → 정제된 쿼리
+    processed = build_member_query(user_input)
+    search_key = processed["query"]
+
+    # 2️⃣ 쿼리 → 조건 딕셔너리
+    conditions = parse_conditions(search_key)
+
+    # 3️⃣ Google Sheets 조회
+    sheet = get_member_sheet()
+    records = sheet.get_all_records()
+    results = []
+
+    for row in records:
+        match = True
+        for field, value in conditions.items():
+            cell_value = str(row.get(field, "")).strip()
+            if field == "코드":
+                cell_value = cell_value.upper()  # 코드값 대문자 통일
+            if cell_value != value:
+                match = False
+                break
+        if match:
+            results.append(row)
+
+    return {
+        "original": user_input,
+        "processed": search_key,
+        "conditions": conditions,
+        "results": results
+    }
+

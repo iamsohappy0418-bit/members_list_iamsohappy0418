@@ -36,7 +36,7 @@ def infer_member_field(value: str) -> str:
 def parse_natural_query_multi(text: str):
     """
     자연어에서 여러 (필드, 키워드) 추출
-    - "코드 a 계보도 장천수" → [("코드","a"),("계보도","장천수")]
+    - "코드 a 계보도 장천수" → [("코드","A"),("계보도","장천수")]
     - "회원명 이태수" → [("회원명","이태수")]
     - "이태수" → [("회원명","이태수")]
     - "회원번호 22366" → [("회원번호","22366")]
@@ -47,7 +47,6 @@ def parse_natural_query_multi(text: str):
     if not text:
         return []
 
-    # ✅ 주소, 메모는 제외
     valid_fields = [
         "회원명", "회원번호", "휴대폰번호", "특수번호", "코드", "계보도", "분류",
         "가입일자", "생년월일", "통신사", "친밀도", "근무처", "소개한분",
@@ -63,22 +62,39 @@ def parse_natural_query_multi(text: str):
     while i < len(tokens):
         token = tokens[i]
 
-        # ✅ case1: 명시적 필드 + 값 (정확한 필드명만 인정)
+        # ✅ case1: 명시적 필드 + 값
         if token in valid_fields and i + 1 < len(tokens):
             keyword = tokens[i + 1]
+
+            # 코드 값은 항상 대문자로 통일
+            if token == "코드":
+                keyword = keyword.upper()
+
             results.append((token, keyword))
             i += 2
             continue
 
         # ✅ case2: 단일 값만 들어온 경우
         if len(tokens) == 1:
-            field = infer_member_field(token)
-            results.append((field, token))
+            # 휴대폰번호 판별
+            if token.startswith("010"):
+                results.append(("휴대폰번호", token))
+            # 숫자 → 회원번호
+            elif token.isdigit():
+                results.append(("회원번호", token))
+            # 한글 이름 추정
+            elif 2 <= len(token) <= 10 and all("가" <= ch <= "힣" for ch in token):
+                results.append(("회원명", token))
+            else:
+                # fallback → infer_member_field 사용
+                field = infer_member_field(token)
+                results.append((field, token))
             i += 1
             continue
 
         i += 1
 
     return results
+
 
 

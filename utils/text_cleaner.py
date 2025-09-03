@@ -75,3 +75,27 @@ def clean_content(text: str, member_name: str = None) -> str:
         s = re.sub(pattern, "", s)
 
     return s.strip()
+
+
+
+
+# utils/text_cleaner.py
+
+def build_member_query(user_input: str) -> dict:
+    """
+    자연어 입력을 API용 JSON 쿼리로 변환합니다.
+    불필요한 조사/단어를 제거하여 핵심 키워드만 남깁니다.
+    예: "코드가 A인 회원" -> { "query": "코드 A 회원" }
+    """
+    replacements = [
+        ("가 ", " "), ("이 ", " "), ("은 ", " "), ("는 ", " "),
+        ("인 ", " "), ("중 ", " "), ("명단", ""), ("사람", "회원"),
+    ]
+    query = user_input
+    for old, new in replacements:
+        query = query.replace(old, new)
+
+    query = " ".join(query.split())  # 불필요한 공백 제거
+    return {"query": query}
+
+
