@@ -1501,61 +1501,55 @@ def save_memo_route():
 # ======================================================================================
 # 자연어 전용 메모 저장
 # ======================================================================================
-@app.route("/add_counseling", methods=["POST"])
-def add_counseling_route():
-    """
-    상담/개인/활동 일지 저장 API (자연어 전용)
-    예: {"요청문": "이태수 상담일지 저장 오늘부터 슬림바디 다시 시작"}
-    """
-    try:
-        data = request.get_json(silent=True) or {}
-        text = data.get("요청문", "").strip()
+@app.route("/addCounseling", methods=["POST"])
+def add_counseling():
+    data = request.json
 
-        match = re.search(r"([가-힣]{2,10})\s*(상담일지|개인일지|활동일지)\s*저장", text)
-        if not match:
-            return jsonify({
-                "status": "error",
-                "message": "❌ 회원명 또는 일지종류를 인식할 수 없습니다."
-            }), 400
+    # 기본 입력값
+    요청문 = data.get("요청문", "").strip()
+    mode = str(data.get("mode", "2"))   # 기본값: 개인메모
+    allow_unregistered = data.get("allow_unregistered", False)
 
-        member_name = match.group(1).strip()
-        sheet_type = match.group(2)
+    # Postman 방식 지원
+    member_name = data.get("회원명")
+    content = data.get("내용")
 
-        content = text.replace(f"{member_name} {sheet_type} 저장", "").strip()
+    # mode → 일지 종류 매핑
+    diary_map = {"1": "상담일지", "2": "개인메모", "3": "활동일지"}
+    diary_type = diary_map.get(mode, "개인메모")
+
+    # 요청문이 있을 경우, 파서로 회원명/내용 추출 (기존 로직 활용)
+    if 요청문 and (not member_name or not content):
+        parsed_name, parsed_type, parsed_content = parse_request(요청문)
+        if not member_name:
+            member_name = parsed_name
         if not content:
-            return jsonify({
-                "status": "error",
-                "message": "❌ 저장할 내용이 비어 있습니다."
-            }), 400
+            content = parsed_content
+        # 일지 종류는 mode 값이 우선
+        if not diary_type and parsed_type:
+            diary_type = parsed_type
 
-        ok = save_memo(sheet_type, member_name, content)
-        if ok:
-            now_str = now_kst().strftime("%Y-%m-%d %H:%M")
+    # 필수값 확인
+    if not member_name:
+        return jsonify({"status": "error", "message": "회원명을 인식할 수 없습니다."}), 400
+    if not diary_type:
+        return jsonify({"status": "error", "message": "일지 종류를 인식할 수 없습니다."}), 400
+    if not content:
+        return jsonify({"status": "error", "message": "내용이 비어 있습니다."}), 400
 
-            # ✅ 내용 길이 제한 (50자까지만 읽어주고 나머지는 '…' 처리)
-            max_len = 50
-            preview = content if len(content) <= max_len else content[:max_len] + "…"
+    # 저장 실행 (실제 저장 함수 호출)
+    save_diary(member_name, diary_type, content, allow_unregistered)
 
-            return jsonify({
-                "status": "success",
-                "message": (
-                    f"✅ {member_name}님의 {sheet_type}가 저장되었습니다.\n"
-                    f"날짜: {now_str}\n"
-                    f"내용: {preview}"
-                )
-            }), 201
+    return jsonify({
+        "status": "success",
+        "message": f"{member_name} {diary_type} 저장 완료",
+        "data": {
+            "회원명": member_name,
+            "일지종류": diary_type,
+            "내용": content
+        }
+    })
 
-        return jsonify({
-            "status": "error",
-            "message": "❌ 시트 저장에 실패했습니다."
-        }), 500
-
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({
-            "status": "error",
-            "message": f"[서버 오류] {str(e)}"
-        }), 500
     
 
 
