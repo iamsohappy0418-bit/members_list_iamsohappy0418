@@ -1664,7 +1664,7 @@ def search_memo_route():
         data = request.get_json(silent=True) or {}
 
         # ✅ 유틸 함수 실행 (자동 분기)
-        results = handle_search_memo(data) or {}
+        results = handle_search_memo(data) or []
 
         # ✅ 사람이 읽기 좋은 보고서 포맷팅
         formatted_report = format_memo_results(results)
@@ -1672,8 +1672,8 @@ def search_memo_route():
         return jsonify({
             "status": "success",
             "input": data,
-            "results": results,              # 원본 JSON 결과
-            "report": formatted_report       # 사람이 읽기 좋은 텍스트
+            "results": results,        # 원본 JSON 결과
+            "report": formatted_report # 사람이 읽기 좋은 텍스트
         }), 200
 
     except Exception as e:
@@ -1682,6 +1682,7 @@ def search_memo_route():
             "status": "error",
             "message": f"❌ 메모 검색 중 오류: {str(e)}"
         }), 500
+
 
 
 

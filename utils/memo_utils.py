@@ -104,14 +104,14 @@ def filter_results_by_member(results, member_name):
 # 로거 설정
 logger = logging.getLogger("memo_utils")
 logger.setLevel(logging.DEBUG)
+if not logger.handlers:  # 중복 등록 방지
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s')
+    ch.setFormatter(formatter)
+    logger.addHandler(ch)
 
-ch = logging.StreamHandler()
-ch.setLevel(logging.DEBUG)
-
-formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s')
-ch.setFormatter(formatter)
-logger.addHandler(ch)
-
+    
 
 def handle_search_memo(data: dict):
     """
@@ -119,20 +119,19 @@ def handle_search_memo(data: dict):
     """
     # 1) 자연어 요청 (text 필드가 있는 경우)
     if "text" in data:
-        query = data["text"]
+        query = data["text"].strip()
         logger.info(f"[FromText-Direct] text 필드 감지 → searchMemoFromText 실행 | query='{query}'")
         return call_searchMemoFromText({"text": query})
 
     # 2) keywords가 없는 경우 → 자연어 변환
     if not data.get("keywords"):
         mode = data.get("mode", "전체")
-        keywords_text = " ".join(data.get("keywords", [])) if data.get("keywords") else ""
         search_mode_text = "동시" if data.get("search_mode") == "동시검색" else ""
         date_text = ""
         if data.get("start_date") and data.get("end_date"):
             date_text = f"{data['start_date']}부터 {data['end_date']}까지"
 
-        query = f"{mode}일지 검색 {keywords_text} {search_mode_text} {date_text}".strip()
+        query = f"{mode}일지 검색 {search_mode_text} {date_text}".strip()
         logger.info(f"[FromText-Converted] keywords 없음 → query 변환 후 searchMemoFromText 실행 | query='{query}'")
         return call_searchMemoFromText({"text": query})
 
