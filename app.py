@@ -2276,6 +2276,118 @@ def commission_find_auto():
 
 
 
+import html
+
+@app.route("/debug_routes_table", methods=["GET"])
+def debug_routes_table():
+    def clean_methods(mset):
+        # Flask가 자동 추가하는 OPTIONS/HEAD는 가독성 위해 제외
+        return ", ".join(sorted([m for m in mset if m not in {"OPTIONS", "HEAD"}])) or "GET"
+
+    rows = []
+    for rule in app.url_map.iter_rules():
+        func = app.view_functions.get(rule.endpoint)
+        if not func:
+            continue
+        mod = getattr(func, "__module__", "")
+        name = getattr(func, "__name__", getattr(func, "__qualname__", ""))
+        code = getattr(func, "__code__", None)
+        file = getattr(code, "co_filename", "")
+        line = getattr(code, "co_firstlineno", "")
+        rows.append({
+            "url": str(rule),
+            "methods": clean_methods(rule.methods),
+            "endpoint": rule.endpoint,
+            "function_name": name,
+            "module": mod,
+            "file": file,
+            "line": line,
+        })
+
+    # URL 기준 정렬
+    rows.sort(key=lambda r: r["url"])
+
+    # 간단한 HTML 테이블 렌더
+    head = """
+    <style>
+      body{font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;padding:24px}
+      table{border-collapse:collapse;width:100%}
+      th,td{border:1px solid #ddd;padding:8px;font-size:14px}
+      th{background:#f5f5f7;text-align:left}
+      tr:nth-child(even){background:#fafafa}
+      .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace}
+      .toolbar{margin-bottom:12px;display:flex;gap:12px;align-items:center}
+      input{padding:6px 10px;border:1px solid #ccc;border-radius:6px;min-width:260px}
+      .count{color:#666}
+    </style>
+    <div class="toolbar">
+      <input id="q" placeholder="필터: URL / endpoint / function / module / file" oninput="filter()">
+      <span class="count" id="count"></span>
+      <a href="/debug_routes_table?format=csv">CSV 다운로드</a>
+    </div>
+    <table id="tbl">
+      <thead>
+        <tr>
+          <th style="width:22%">URL</th>
+          <th style="width:10%">Methods</th>
+          <th style="width:16%">Endpoint</th>
+          <th style="width:16%">Function</th>
+          <th style="width:12%">Module</th>
+          <th>File:Line</th>
+        </tr>
+      </thead>
+      <tbody>
+    """
+    body = []
+    for r in rows:
+        body.append(
+            "<tr>" +
+            f"<td class='mono'>{html.escape(r['url'])}</td>" +
+            f"<td>{html.escape(r['methods'])}</td>" +
+            f"<td class='mono'>{html.escape(r['endpoint'])}</td>" +
+            f"<td class='mono'>{html.escape(r['function_name'])}</td>" +
+            f"<td class='mono'>{html.escape(r['module'])}</td>" +
+            f"<td class='mono'>{html.escape(r['file'])}:{r['line']}</td>" +
+            "</tr>"
+        )
+    tail = """
+      </tbody>
+    </table>
+    <script>
+      const q = document.getElementById('q');
+      const tbl = document.getElementById('tbl').getElementsByTagName('tbody')[0];
+      const rows = Array.from(tbl.rows);
+      const count = document.getElementById('count');
+      function filter(){
+        const term = (q.value || '').toLowerCase();
+        let shown = 0;
+        rows.forEach(tr=>{
+          const text = tr.innerText.toLowerCase();
+          const ok = !term || text.includes(term);
+          tr.style.display = ok ? '' : 'none';
+          if(ok) shown++;
+        });
+        count.textContent = `표시: ${shown} / 전체: ${rows.length}`;
+      }
+      filter();
+    </script>
+    """
+    # CSV 모드 지원 (?format=csv)
+    if (request.args.get("format", "").lower() == "csv"):
+        import csv, io as _io
+        buf = _io.StringIO()
+        writer = csv.DictWriter(buf, fieldnames=["url","methods","endpoint","function_name","module","file","line"])
+        writer.writeheader()
+        for r in rows:
+            writer.writerow(r)
+        return Response(buf.getvalue(), mimetype="text/csv",
+                        headers={"Content-Disposition": "attachment; filename=routes.csv"})
+
+    return Response(head + "\n".join(body) + tail, mimetype="text/html")
+
+
+
+
 
 
 if __name__ == "__main__":

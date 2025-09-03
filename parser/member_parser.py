@@ -372,8 +372,6 @@ def parse_deletion_request_compat(text: str) -> Tuple[Optional[str], Optional[st
 
 
 
-# parser/member_parser.py
-import re
 
 # 조건 매핑 테이블
 CONDITION_PATTERNS = {
