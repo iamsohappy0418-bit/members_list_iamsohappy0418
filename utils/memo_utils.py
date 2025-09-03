@@ -2,6 +2,8 @@
 from datetime import datetime
 import logging
 
+from utils.plugin_client import call_searchMemo, call_searchMemoFromText
+
 
 # 📌 예시 데이터 (실제 환경에서는 API 결과로 대체)
 def get_memo_results(query):
@@ -103,32 +105,23 @@ def filter_results_by_member(results, member_name):
 logger = logging.getLogger("memo_utils")
 logger.setLevel(logging.DEBUG)
 
-# 콘솔 출력 핸들러 추가
 ch = logging.StreamHandler()
 ch.setLevel(logging.DEBUG)
 
-# 로그 포맷 지정
 formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(message)s')
 ch.setFormatter(formatter)
 logger.addHandler(ch)
 
 
-
-
-
-
-
-
-async def handle_search_memo(data: dict):
+def handle_search_memo(data: dict):
     """
-    searchMemo와 searchMemoFromText 자동 분기 처리 + 로깅
-    (동기 함수 버전 → await 제거)
+    searchMemo와 searchMemoFromText 자동 분기 처리 + 로깅 (동기 버전)
     """
     # 1) 자연어 요청 (text 필드가 있는 경우)
     if "text" in data:
         query = data["text"]
         logger.info(f"[FromText-Direct] text 필드 감지 → searchMemoFromText 실행 | query='{query}'")
-        return searchMemoFromText({"text": query})   # ✅ await 제거
+        return call_searchMemoFromText({"text": query})
 
     # 2) keywords가 없는 경우 → 자연어 변환
     if not data.get("keywords"):
@@ -141,11 +134,11 @@ async def handle_search_memo(data: dict):
 
         query = f"{mode}일지 검색 {keywords_text} {search_mode_text} {date_text}".strip()
         logger.info(f"[FromText-Converted] keywords 없음 → query 변환 후 searchMemoFromText 실행 | query='{query}'")
-        return searchMemoFromText({"text": query})   # ✅ await 제거
+        return call_searchMemoFromText({"text": query})
 
     # 3) 정상 content 기반 요청 → searchMemo 실행
     logger.info(f"[Content-Mode] keywords 감지 → searchMemo 실행 | keywords={data.get('keywords')}, mode={data.get('mode')}")
-    return searchMemo(data)   # ✅ await 제거
+    return call_searchMemo(data)
 
 
 

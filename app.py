@@ -1657,33 +1657,32 @@ def memo_find_auto():
 def search_memo_route():
     """
     메모 검색 API (자연어 + JSON 파라미터 지원)
-    📌 설명:
-    - text 필드가 있으면 자연어 검색 (예: {"text": "전체메모 검색 포항"})
-    - keywords 필드가 있으면 고급 검색 (예: {"keywords": ["중국","세미나"], "search_mode":"동시검색"})
+    - text 필드 있으면 자연어 검색
+    - keywords 필드 있으면 JSON 기반 검색
     """
-
     try:
         data = request.get_json(silent=True) or {}
 
         # ✅ 유틸 함수 실행 (자동 분기)
-        results = handle_search_memo(data)
+        results = handle_search_memo(data) or {}
 
-        # ✅ 결과 포맷팅 (사람 읽기 좋은 출력 포함)
-        formatted = format_memo_results(results)
+        # ✅ 사람이 읽기 좋은 보고서 포맷팅
+        formatted_report = format_memo_results(results)
 
         return jsonify({
             "status": "success",
             "input": data,
-            "results": results,       # 원본 dict 리스트
-            "formatted": formatted    # 사람이 읽기 좋은 블록 + 리스트
+            "results": results,              # 원본 JSON 결과
+            "report": formatted_report       # 사람이 읽기 좋은 텍스트
         }), 200
 
     except Exception as e:
-        traceback.print_exc()
+        import traceback; traceback.print_exc()
         return jsonify({
             "status": "error",
             "message": f"❌ 메모 검색 중 오류: {str(e)}"
         }), 500
+
 
 
 
