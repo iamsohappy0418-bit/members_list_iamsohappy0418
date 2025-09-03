@@ -85,6 +85,7 @@ from service.member_service import (
     update_member_internal,
     delete_member_internal,
     delete_member_field_nl_internal,
+    process_member_query,
 )
 
 from service.order_service import (
@@ -1865,16 +1866,8 @@ def search_memo_from_text():
     # ✅ format_memo_results 적용
     formatted = format_memo_results(all_results)
 
-    # ✅ 텍스트 블록 변환
-    icons = {"활동일지": "🗂", "상담일지": "📂", "개인일지": "📒"}
-    text_blocks = []
-    for sheet_name in ["활동일지", "상담일지", "개인일지"]:
-        entries = formatted.get(sheet_name, [])
-        if entries:
-            block = [f"{icons[sheet_name]} {sheet_name}"]
-            block.extend(entries)
-            text_blocks.append("\n".join(block))
-    response_text = "\n\n".join(text_blocks)
+    # ✅ 사람이 읽기 좋은 텍스트 블록 (이미 formatted["text"]에 있음)
+    response_text = formatted["text"]
 
     # ✅ 분기 응답
     if detail:
@@ -1884,18 +1877,17 @@ def search_memo_from_text():
             "member_name": member_name,
             "search_mode": search_mode,
             "keywords": keywords,
-            "results": formatted,   # 전체 반환
-            "counts": {k: len(v) for k, v in formatted.items()}
+            "results": formatted["lists"],  # 카테고리별 리스트
+            "formatted_text": response_text,  # 전체 텍스트 블록
+            "counts": {k: len(v) for k, v in formatted["lists"].items()}
         }), 200
     else:
         return jsonify({
             "status": "success",
             "keywords": keywords,
             "formatted_text": response_text,
-            "counts": {k: len(v) for k, v in formatted.items()}
+            "counts": {k: len(v) for k, v in formatted["lists"].items()}
         }), 200
-
-
 
 
 

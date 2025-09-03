@@ -369,3 +369,34 @@ def parse_deletion_request_compat(text: str) -> Tuple[Optional[str], Optional[st
 
 
 
+
+
+
+# parser/member_parser.py
+import re
+
+# 조건 매핑 테이블
+CONDITION_PATTERNS = {
+    "코드": r"코드\s*([A-Za-z]+)",   # 알파벳 코드 (대소문자 허용)
+    "지역": r"(서울|부산|대구|인천|광주|대전|울산|세종)",
+    "직업": r"(교사|의사|간호사|학생|자영업|회사원)",
+    "성별": r"(남성|여성|남자|여자)",
+    "연령대": r"(\d{2})대"            # 예: 20대, 30대
+}
+
+def parse_conditions(query: str):
+    """
+    전처리된 문자열을 조건 딕셔너리로 변환합니다.
+    대소문자 구분 없이 매칭하며, 코드 값은 항상 대문자로 통일합니다.
+    """
+    conditions = {}
+    for field, pattern in CONDITION_PATTERNS.items():
+        match = re.search(pattern, query, flags=re.IGNORECASE)  # 대소문자 무시
+        if match:
+            value = match.group(1)
+            if field == "코드":
+                value = value.upper()  # 코드값은 무조건 대문자로 변환
+            conditions[field] = value
+    return conditions
+
+
