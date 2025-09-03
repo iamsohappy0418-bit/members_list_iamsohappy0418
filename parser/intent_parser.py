@@ -1,39 +1,48 @@
+import re
+from flask import Flask, request, jsonify, redirect
+
+
+
 def guess_intent(text: str) -> str:
     """
     자연어 문장에서 intent 추측
-    - 회원 / 주문 / 메모 / 후원수당 카테고리 구분
+    - 단문은 무조건 조회 처리 (특히 회원번호/회원명)
     """
-    text = (text or "")
+    text = (text or "").strip()
 
-    # 회원
-    if any(k in text for k in ["회원등록", "등록", "추가"]):
-        return "register_member"
-    if any(k in text for k in ["수정", "변경", "업데이트"]):
-        return "update_member"
-    if any(k in text for k in ["삭제", "지워", "제거"]):
-        return "delete_member"
-    if any(k in text for k in ["조회", "찾아", "검색", "알려줘"]):
-        return "find_member"
+    # ✅ 1. 단문 패턴: 회원 조회 우선
+    # - 회원명 (한글 2~4자)
+    if re.fullmatch(r"[가-힣]{2,4}", text):
+        return "member_find_auto"
 
-    # 주문
-    if "주문" in text and "저장" in text:
-        return "save_order"
-    if "주문" in text and any(k in text for k in ["조회", "찾아", "검색"]):
-        return "find_order"
+    # - 회원번호 (숫자 5~8자리)
+    if re.fullmatch(r"\d{5,8}", text):
+        return "member_find_auto"
 
-    # 메모 / 일지
-    if any(k in text for k in ["상담일지", "개인일지", "활동일지"]):
-        return "save_memo"
-    if "메모" in text and any(k in text for k in ["조회", "검색", "찾아"]):
-        return "find_memo"
+    # - 휴대폰 번호
+    if re.fullmatch(r"\d{3}-\d{3,4}-\d{4}", text):
+        return "member_find_auto"
 
-    # 후원수당
-    if "후원수당" in text and any(k in text for k in ["등록", "추가", "저장"]):
-        return "save_commission"
-    if "후원수당" in text and any(k in text for k in ["조회", "검색", "알려줘"]):
-        return "find_commission"
+    # - 코드 A 형태
+    if re.fullmatch(r"코드\s*[A-Za-z0-9]+", text):
+        return "member_find_auto"
+
+    # ✅ 2. 주문/수당 맥락 키워드 포함된 경우
+    if "주문" in text:
+        return "order_find_auto"
+    if "후원수당" in text:
+        return "commission_find_auto"
+
+    # ✅ 3. 메모/일지 관련
+    if any(k in text for k in ["상담일지", "개인일지", "활동일지", "메모"]):
+        return "memo_find_auto"
+
+    # ✅ 4. 회원 키워드
+    if "회원" in text:
+        return "member_find_auto"
 
     return "unknown"
+
 
 
 

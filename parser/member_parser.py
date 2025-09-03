@@ -83,6 +83,8 @@ def parse_registration(text: str) -> Tuple[Optional[str], Optional[str], Optiona
 
     return name or None, number or None, phone or None
 
+from utils import clean_tail_command, clean_value_expression
+
 
 
 

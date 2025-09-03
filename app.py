@@ -74,7 +74,7 @@ from parser.commission_parser import (
     clean_commission_data,
 )
 
-from parser.intent_parser import guess_intent
+
 from parser.field_map import field_map
 
 # ===== service =====
@@ -179,6 +179,117 @@ def debug_sheets():
 
 
 
+from flask import Flask, request, jsonify, redirect
+
+app = Flask(__name__)
+
+
+def guess_intent(text: str) -> str:
+    """
+    자연어 문장에서 intent 추측
+    - 회원 / 주문 / 메모 / 후원수당 카테고리 구분
+    """
+    text = (text or "")
+
+    # 회원
+    if "회원" in text:
+        return "member_find_auto"
+
+    # 주문
+    if "주문" in text:
+        return "order_find_auto"
+
+    # 메모 / 일지
+    if any(k in text for k in ["상담일지", "개인일지", "활동일지", "메모"]):
+        return "memo_find_auto"
+
+    # 후원수당
+    if "후원수당" in text:
+        return "commission_find_auto"
+
+    return "unknown"
+
+
+@app.route("/guess_intent", methods=["POST"])
+def guess_intent_entry():
+    """
+    자연어 입력의 진입점
+    - intent를 판별하고 해당 자동 분기 API로 redirect
+    """
+    data = request.get_json(silent=True) or {}
+    text = data.get("text", "")
+
+    intent = guess_intent(text)
+
+    if intent == "member_find_auto":
+        return redirect("/member_find_auto")
+    if intent == "order_find_auto":
+        return redirect("/order_find_auto")
+    if intent == "memo_find_auto":
+        return redirect("/memo_find_auto")
+    if intent == "commission_find_auto":
+        return redirect("/commission_find_auto")
+
+    return jsonify({
+        "status": "error",
+        "message": f"❌ 처리할 수 없는 요청입니다. (intent={intent})"
+    }), 400
+
+
+# ✅ 회원 자동 분기
+@app.route("/member_find_auto", methods=["POST"])
+def member_find_auto():
+    text = (request.get_json(silent=True) or {}).get("text", "")
+
+    if any(k in text for k in ["등록", "추가"]):
+        return jsonify({"status": "success", "action": "register_member"})
+    if any(k in text for k in ["수정", "변경", "업데이트"]):
+        return jsonify({"status": "success", "action": "update_member"})
+    if any(k in text for k in ["삭제", "지워", "제거"]):
+        return jsonify({"status": "success", "action": "delete_member"})
+    if any(k in text for k in ["조회", "찾아", "검색", "알려줘"]):
+        return jsonify({"status": "success", "action": "find_member"})
+
+    return jsonify({"status": "error", "message": "❌ 회원 요청 해석 불가"}), 400
+
+
+# ✅ 주문 자동 분기
+@app.route("/order_find_auto", methods=["POST"])
+def order_find_auto():
+    text = (request.get_json(silent=True) or {}).get("text", "")
+
+    if "저장" in text:
+        return jsonify({"status": "success", "action": "save_order"})
+    if any(k in text for k in ["조회", "검색", "찾아"]):
+        return jsonify({"status": "success", "action": "find_order"})
+
+    return jsonify({"status": "error", "message": "❌ 주문 요청 해석 불가"}), 400
+
+
+# ✅ 메모 자동 분기
+@app.route("/memo_find_auto", methods=["POST"])
+def memo_find_auto():
+    text = (request.get_json(silent=True) or {}).get("text", "")
+
+    if any(k in text for k in ["저장", "작성", "기록"]):
+        return jsonify({"status": "success", "action": "save_memo"})
+    if any(k in text for k in ["조회", "검색", "찾아"]):
+        return jsonify({"status": "success", "action": "find_memo"})
+
+    return jsonify({"status": "error", "message": "❌ 메모 요청 해석 불가"}), 400
+
+
+# ✅ 후원수당 자동 분기
+@app.route("/commission_find_auto", methods=["POST"])
+def commission_find_auto():
+    text = (request.get_json(silent=True) or {}).get("text", "")
+
+    if any(k in text for k in ["등록", "추가", "저장"]):
+        return jsonify({"status": "success", "action": "save_commission"})
+    if any(k in text for k in ["조회", "검색", "알려줘"]):
+        return jsonify({"status": "success", "action": "find_commission"})
+
+    return jsonify({"status": "error", "message": "❌ 후원수당 요청 해석 불가"}), 400
 
 
 
@@ -195,21 +306,28 @@ def member_find_auto():
     - 자연어 기반 요청(text, query 포함) → search_by_natural_language
     - JSON 기반 요청(회원명, 회원번호 포함) → find_member_route
     """
-    data = request.get_json(silent=True) or {}
+    text = (request.get_json(silent=True) or {}).get("text", "").strip()
 
-    # 자연어 기반
-    if "text" in data or "query" in data:
-        return search_by_natural_language()
+    # 단문 → 무조건 조회
+    if re.fullmatch(r"코드\s*[A-Za-z0-9]+", text) \
+       or re.fullmatch(r"[가-힣]{2,4}", text) \
+       or re.fullmatch(r"\d{3}-\d{3,4}-\d{4}", text) \
+       or re.fullmatch(r"\d{5,}", text):
+        return jsonify({"status": "success", "action": "find_member"})
 
-    # JSON 기반
-    if "회원명" in data or "회원번호" in data:
-        return find_member_route()
+    # 키워드 기반 분기
+    if any(k in text for k in ["등록", "추가"]):
+        return jsonify({"status": "success", "action": "register_member"})
+    if any(k in text for k in ["수정", "변경", "업데이트"]):
+        return jsonify({"status": "success", "action": "update_member"})
+    if any(k in text for k in ["삭제", "지워", "제거"]):
+        return jsonify({"status": "success", "action": "delete_member"})
+    if any(k in text for k in ["조회", "찾아", "검색", "알려줘"]):
+        return jsonify({"status": "success", "action": "find_member"})
 
-    return jsonify({
-        "status": "error",
-        "message": "❌ 입력이 올바르지 않습니다. "
-                   "자연어는 'text/query', JSON은 '회원명/회원번호'를 포함해야 합니다."
-    }), 400
+    return jsonify({"status": "error", "message": "❌ 회원 요청 해석 불가"}), 400
+
+
 
 
 
@@ -1577,26 +1695,20 @@ def memo_find_auto():
     - 자연어 기반 요청(text, query 포함) → search_memo_from_text
     - JSON 기반 요청(sheet, keywords, member_name 등 포함) → search_memo
     """
-    data = request.get_json(silent=True) or {}
+    text = (request.get_json(silent=True) or {}).get("text", "").strip()
 
-    # ✅ 자연어 기반: query / text 가 있을 때
-    if "query" in data or "text" in data:
-        return search_memo_from_text()
+    # 단문 → 조회 (짧은 단어는 검색 키워드로 간주)
+    if len(text) <= 10:  # 예: "포항", "중국"
+        return jsonify({"status": "success", "action": "find_memo"})
 
-    # ✅ JSON 기반: sheet / keywords / member_name 중 하나라도 있을 때
-    if any(k in data for k in ["sheet", "keywords", "member_name"]):
-        return search_memo()
+    if any(k in text for k in ["저장", "작성", "기록"]):
+        return jsonify({"status": "success", "action": "save_memo"})
+    if any(k in text for k in ["조회", "검색", "찾아"]):
+        return jsonify({"status": "success", "action": "find_memo"})
 
-    # ✅ 단일 문자열만 전달된 경우 (ex: { "text": "전체메모 검색 중국" } 로 처리)
-    if isinstance(data, str) and data.strip():
-        return search_memo_from_text()
+    return jsonify({"status": "error", "message": "❌ 메모 요청 해석 불가"}), 400
 
-    return jsonify({
-        "status": "error",
-        "message": "❌ 입력이 올바르지 않습니다. "
-                   "자연어는 'query/text/단일문자열', "
-                   "JSON은 'sheet/keywords/member_name'을 포함해야 합니다."
-    }), 400
+
 
 
 # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
@@ -2133,26 +2245,19 @@ def order_find_auto():
     - 자연어 기반 요청(query, text) → search_order_by_nl
     - JSON 기반 요청(회원명, 제품명) → find_order_route
     """
-    data = request.get_json(silent=True) or {}
+    text = (request.get_json(silent=True) or {}).get("text", "").strip()
 
-    # ✅ 자연어 기반
-    if "query" in data or "text" in data:
-        return search_order_by_nl()
+    # 단문 → 조회 (주문번호 같은 경우)
+    if re.fullmatch(r"\d{5,}", text):
+        return jsonify({"status": "success", "action": "find_order"})
 
-    # ✅ JSON 기반
-    if "회원명" in data or "제품명" in data:
-        return find_order_route()
+    if "저장" in text:
+        return jsonify({"status": "success", "action": "save_order"})
+    if any(k in text for k in ["조회", "검색", "찾아"]):
+        return jsonify({"status": "success", "action": "find_order"})
 
-    # ✅ 단일 문자열만 전달된 경우
-    if isinstance(data, str) and data.strip():
-        return search_order_by_nl()
+    return jsonify({"status": "error", "message": "❌ 주문 요청 해석 불가"}), 400
 
-    return jsonify({
-        "status": "error",
-        "message": "❌ 입력이 올바르지 않습니다. "
-                   "자연어는 'query/text/단일문자열', "
-                   "JSON은 '회원명/제품명'을 포함해야 합니다."
-    }), 400
 
 
 
@@ -2261,32 +2366,19 @@ def search_commission_by_nl():
 # ======================================================================================
 @app.route("/commission_find_auto", methods=["POST"])
 def commission_find_auto():
-    """
-    후원수당 조회 자동 분기 API
-    📌 설명:
-    - 자연어 기반 요청(query, text) → search_commission_by_nl
-    - JSON 기반 요청(회원명) → find_commission_route
-    """
-    data = request.get_json(silent=True) or {}
+    text = (request.get_json(silent=True) or {}).get("text", "").strip()
 
-    # ✅ 자연어 기반
-    if "query" in data or "text" in data:
-        return search_commission_by_nl()
+    # 단문 → 조회 (숫자 ID, 짧은 키워드 등)
+    if re.fullmatch(r"\d{5,}", text):
+        return jsonify({"status": "success", "action": "find_commission"})
 
-    # ✅ JSON 기반
-    if "회원명" in data:
-        return find_commission_route()
+    if any(k in text for k in ["등록", "추가", "저장"]):
+        return jsonify({"status": "success", "action": "save_commission"})
+    if any(k in text for k in ["조회", "검색", "알려줘"]):
+        return jsonify({"status": "success", "action": "find_commission"})
 
-    # ✅ 단일 문자열만 전달된 경우
-    if isinstance(data, str) and data.strip():
-        return search_commission_by_nl()
+    return jsonify({"status": "error", "message": "❌ 후원수당 요청 해석 불가"}), 400
 
-    return jsonify({
-        "status": "error",
-        "message": "❌ 입력이 올바르지 않습니다. "
-                   "자연어는 'query/text/단일문자열', "
-                   "JSON은 '회원명'을 포함해야 합니다."
-    }), 400
 
 
 

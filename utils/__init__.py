@@ -14,6 +14,8 @@ from .date_utils import (
 # 문자열 정리 (자연어 처리 중심)
 from .text_cleaner import (
     clean_content,   # 핵심만 공개
+    clean_tail_command,   # ✅ 추가
+    clean_value_expression,  # ✅ 추가
 )
 
 # 문자열 유틸 (기본 처리)
@@ -30,6 +32,11 @@ from .sheets import (
     get_sheet,
     get_worksheet,
     get_member_sheet,
+    get_product_order_sheet,
+    get_counseling_sheet,
+    get_personal_memo_sheet,
+    get_activity_log_sheet,
+    get_commission_sheet,
     append_row,
     update_cell,
     safe_update_cell,
@@ -43,21 +50,37 @@ from .memo_utils import (
     filter_results_by_member,
 )
 
+# OpenAI 관련 (주문 파싱 등)
+from .openai_utils import (
+    extract_order_from_uploaded_image,   # ✅ 추가
+    parse_order_from_text,               # ✅ 같이 추가
+)
+
 __all__ = [
     # date_utils
     "now_kst", "process_order_date", "parse_dt",
 
     # text_cleaner
-    "clean_content",
+    "clean_content", "clean_tail_command", "clean_value_expression",  # ✅ 추가
 
     # string_utils
     "remove_josa", "remove_spaces", "split_to_parts",
     "is_match", "match_condition",
 
     # sheets
-    "get_sheet", "get_worksheet", "get_member_sheet",
+    "get_sheet", "get_worksheet",
+    "get_member_sheet", "get_product_order_sheet",
+    "get_counseling_sheet", "get_personal_memo_sheet",
+    "get_activity_log_sheet", "get_commission_sheet",
     "append_row", "update_cell", "safe_update_cell", "delete_row",
 
     # memo_utils
     "get_memo_results", "format_memo_results", "filter_results_by_member",
+
+    # openai_utils
+    "extract_order_from_uploaded_image", "parse_order_from_text",
+
 ]
+
+
+
