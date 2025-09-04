@@ -5,6 +5,7 @@ import logging
 from utils.plugin_client import call_searchMemo, call_searchMemoFromText
 
 
+
 # 📌 예시 데이터 (실제 환경에서는 API 결과로 대체)
 def get_memo_results(query):
     return [
@@ -111,7 +112,7 @@ if not logger.handlers:  # 중복 등록 방지
     ch.setFormatter(formatter)
     logger.addHandler(ch)
 
-    
+
 
 def handle_search_memo(data: dict):
     """
