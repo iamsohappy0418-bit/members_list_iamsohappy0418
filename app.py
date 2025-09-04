@@ -359,8 +359,7 @@ def search_member_by_natural_text():
     results = search_members(sheet, conditions)
     return jsonify(results)
 
-if __name__ == "__main__":
-    app.run(debug=True)
+
 
 
 # ======================================================================================
