@@ -1,32 +1,25 @@
 # utils/plugin_client.py
 import os
-import importlib
+import requests
 
-# ✅ .env 에서 모듈 이름 읽기 (기본값: memberslist_onrender_com__jit_plugin)
-PLUGIN_MODULE = os.getenv("PLUGIN_MODULE", "memberslist_onrender_com__jit_plugin")
+MEMBERSLIST_API_URL = os.getenv("MEMBERSLIST_API_URL")  # .env에 추가해야 함, 예: https://memberslist.onrender.com
 
-try:
-    plugin_module = importlib.import_module(PLUGIN_MODULE)
-except ImportError as e:
-    raise ImportError(f"❌ 플러그인 모듈을 불러올 수 없습니다: {PLUGIN_MODULE}") from e
-
-# ✅ 모듈에서 함수 가져오기
-try:
-    searchMemo = getattr(plugin_module, "searchMemo")
-    searchMemoFromText = getattr(plugin_module, "searchMemoFromText")
-except AttributeError as e:
-    raise ImportError(f"❌ {PLUGIN_MODULE} 모듈에서 searchMemo / searchMemoFromText 를 찾을 수 없습니다.") from e
-
-
-# ✅ 호출 래퍼
 def call_searchMemo(payload: dict):
-    """ searchMemo API 호출 (동기 래퍼) """
-    return searchMemo(payload)
-
+    """ searchMemo API 호출 """
+    if not MEMBERSLIST_API_URL:
+        raise RuntimeError("❌ MEMBERSLIST_API_URL 환경변수가 설정되지 않았습니다.")
+    url = f"{MEMBERSLIST_API_URL.rstrip('/')}/search_memo"
+    r = requests.post(url, json=payload, timeout=30)
+    r.raise_for_status()
+    return r.json().get("results", [])
 
 def call_searchMemoFromText(payload: dict):
-    """ searchMemoFromText API 호출 (동기 래퍼) """
-    return searchMemoFromText(payload)
-
+    """ searchMemoFromText API 호출 (자연어) """
+    if not MEMBERSLIST_API_URL:
+        raise RuntimeError("❌ MEMBERSLIST_API_URL 환경변수가 설정되지 않았습니다.")
+    url = f"{MEMBERSLIST_API_URL.rstrip('/')}/search_memo"
+    r = requests.post(url, json=payload, timeout=30)
+    r.raise_for_status()
+    return r.json().get("results", [])
 
 
