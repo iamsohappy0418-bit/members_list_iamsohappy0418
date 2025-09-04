@@ -58,6 +58,15 @@ from .openai_utils import (
     parse_order_from_text,               # ✅ 같이 추가
 )
 
+# 검색 관련 유틸
+from .search_utils import (
+    search_members,
+    parse_natural_query,
+)
+
+
+
+
 __all__ = [
     # date_utils
     "now_kst", "process_order_date", "parse_dt",
@@ -82,6 +91,10 @@ __all__ = [
 
     # openai_utils
     "extract_order_from_uploaded_image", "parse_order_from_text",
+
+    # search_utils
+    "search_members", "parse_natural_query",
+
 
 ]
 

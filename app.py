@@ -34,6 +34,7 @@ from utils import (
     # 메모 관련
     get_memo_results, format_memo_results, filter_results_by_member,
     handle_search_memo,  # ✅ 추가
+    search_members, parse_natural_query,
 )
 
 # ===== project: utils (도메인 전용 → 직접 import) =====
@@ -119,6 +120,31 @@ from service.commission_service import (
 
 
 
+# --------------------------------------------------
+# Google Sheets
+# --------------------------------------------------
+SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
+WORKSHEET_NAME = os.getenv("WORKSHEET_NAME", "DB")
+SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_SERVICE_ACCOUNT", "credentials.json")
+
+# --------------------------------------------------
+# OpenAI
+# --------------------------------------------------
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_API_URL = os.getenv("OPENAI_API_URL")
+PROMPT_ID = os.getenv("PROMPT_ID")
+PROMPT_VERSION = os.getenv("PROMPT_VERSION")
+
+# --------------------------------------------------
+# Memberslist API
+# --------------------------------------------------
+MEMBERSLIST_API_URL = os.getenv("MEMBERSLIST_API_URL")
+
+
+
+
+
+
 
 
 
@@ -190,23 +216,18 @@ def guess_intent(text: str) -> str:
     - 회원 / 주문 / 메모 / 후원수당 카테고리 구분
     """
     text = (text or "")
-
     # 회원
     if "회원" in text:
         return "member_find_auto"
-
     # 주문
     if "주문" in text:
         return "order_find_auto"
-
     # 메모 / 일지
     if any(k in text for k in ["상담일지", "개인일지", "활동일지", "메모"]):
         return "memo_find_auto"
-
     # 후원수당
     if "후원수당" in text:
         return "commission_find_auto"
-
     return "unknown"
 
 
@@ -282,7 +303,7 @@ def member_find_auto():
 # ✅ 회원 조회 (JSON 전용)
 # ======================================================================================
 @app.route("/find_member", methods=["POST"])
-def find_member_route():
+def find_member():
     """
     회원 조회 API (JSON 전용)
     📌 설명:
@@ -292,24 +313,12 @@ def find_member_route():
       "회원명": "신금자"
     }
     """
-    try:
-        data = request.get_json()
-        name = data.get("회원명", "").strip()
-        number = data.get("회원번호", "").strip()
 
-        if not name and not number:
-            return jsonify({"error": "회원명 또는 회원번호를 입력해야 합니다."}), 400
+    search_params = request.args.to_dict()
+    sheet = get_google_sheet(client, SPREADSHEET_ID, WORKSHEET_NAME)
+    results = search_members(sheet, search_params)
+    return jsonify(results)
 
-        matched = find_member_internal(name, number)
-        if not matched:
-            return jsonify({"error": "해당 회원 정보를 찾을 수 없습니다."}), 404
-
-        if len(matched) == 1:
-            return jsonify(clean_member_data(matched[0])), 200
-        return jsonify([clean_member_data(m) for m in matched]), 200
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
     
 
 
@@ -334,114 +343,24 @@ def search_by_natural_language():
     offset = int(data.get("offset", 0))
     limit = 20  # ✅ 기본 20건 유지
 
+
+
+
+
+
+@app.route("/searchMemberByNaturalText", methods=["GET"])
+def search_member_by_natural_text():
+    query = request.args.get("query", "").strip()
     if not query:
-        return Response("query 파라미터가 필요합니다.", status=400)
+        return jsonify({"error": "검색어가 비어있습니다."}), 400
 
-    # ✅ 조건 추출
-    conditions = parse_natural_query_multi(query)
-    if not conditions:
-        return Response("자연어에서 검색 조건을 추출할 수 없습니다.", status=400)
+    conditions = parse_natural_query(query)
+    sheet = get_google_sheet(client, SPREADSHEET_ID, WORKSHEET_NAME)
+    results = search_members(sheet, conditions)
+    return jsonify(results)
 
-    try:
-        sheet = get_member_sheet()
-        records = sheet.get_all_records()
-
-        # ✅ 조건 AND 필터링
-        filtered = []
-        for m in records:
-            ok = True
-
-
-
-            for field, keyword in conditions:
-                value = str(m.get(field, "")).strip()
-                val_lower = value.lower()
-                key_lower = keyword.lower()
-
-                if field in ["코드", "특수번호"]:
-                    # 코드/특수번호는 정확 일치 (대소문자 무시)
-                    if val_lower != key_lower:
-                        ok = False
-                        break
-                else:
-                    # 나머지 필드는 부분 검색 (대소문자 무시)
-                    if key_lower not in val_lower:
-                        ok = False
-                        break
-
-
-
-            if ok:
-                filtered.append(m)
-
-        # ✅ 정렬 조건 분기
-        use_simple_sort = any(field in ["코드", "특수번호"] for field, _ in conditions)
-
-        if use_simple_sort:
-            # 코드/특수번호 검색 → 회원명만 정렬
-            filtered.sort(key=lambda m: str(m.get("회원명", "")).strip())
-        else:
-            # 기본 → 회원명 + 회원번호
-            def sort_key(m):
-                name = str(m.get("회원명", "")).strip()
-                number = m.get("회원번호", "")
-                try:
-                    number_int = int(number) if str(number).isdigit() else 0
-                except:
-                    number_int = 0
-                return (name, number_int)
-
-            filtered.sort(key=sort_key)
-
-        # ✅ 페이지네이션
-        paginated = filtered[offset:offset + limit]
-
-        # ✅ JSON 상세 모드
-        if detail:
-            return jsonify({
-                "status": "success",
-                "query": query,
-                "conditions": conditions,
-                "offset": offset,
-                "limit": limit,
-                "count": len(paginated),
-                "results": paginated,
-                "has_more": offset + limit < len(filtered)
-            }), 200
-
-        # ✅ 텍스트 모드
-        if not paginated:
-            response_text = f"🔎 검색 요청: {query}\n조건에 맞는 회원이 없습니다."
-            return Response(response_text, mimetype='text/plain')
-
-        lines = [f"🔎 검색 요청: {query}"]  # 타이틀 한 번만 표시
-        for m in paginated:
-            parts = [
-                f"회원명: {m.get('회원명', '')}",
-                f"회원번호: {m.get('회원번호', '')}",
-            ]
-            if m.get("휴대폰번호"):
-                parts.append(f"휴대폰번호: {m['휴대폰번호']}")
-            if m.get("특수번호"):
-                parts.append(f"특수번호: {m['특수번호']}")
-            if m.get("코드"):
-                parts.append(f"코드: {m['코드']}")
-            lines.append(", ".join(parts))
-
-        if offset + limit < len(filtered):
-            lines.append("--- 다음 있음 ---")
-
-        response_text = "\n".join(lines)
-        return Response(response_text, mimetype='text/plain')
-
-    except Exception as e:
-        return Response(f"[서버 오류] {str(e)}", status=500)
-    
-
-
-
-
-    
+if __name__ == "__main__":
+    app.run(debug=True)
 
 
 # ======================================================================================
