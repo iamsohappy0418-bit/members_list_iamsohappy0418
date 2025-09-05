@@ -12,7 +12,7 @@ from .member_parser import (
 )
 
 # 주문 관련 파서
-from .order_parser import (
+from .parse_order import (
     parse_order_text,
     ensure_orders_list,   # ✅ 추가
 )

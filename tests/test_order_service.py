@@ -40,7 +40,7 @@ def test_parse_order_text_without_member(monkeypatch):
     text = "노니 2개 카드 주문"
 
     # find_member_in_text이 항상 None을 반환하도록 패치
-    monkeypatch.setattr("parser.order_parser.find_member_in_text", lambda t: None)
+    monkeypatch.setattr("parser.parse_order.find_member_in_text", lambda t: None)
 
     result = parse_order_text(text)
     assert result["회원명"] is None

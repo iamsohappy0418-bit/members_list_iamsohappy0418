@@ -61,7 +61,7 @@ from parser import (
     guess_intent,
 )
 
-from parser.order_parser import (
+from parser.parse_order import (
     parse_order_text,
     parse_order_text_rule,
     parse_order_from_text,

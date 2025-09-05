@@ -81,7 +81,7 @@ def handle_product_order(text: str, member_name: str):
     자연어 문장을 파싱 후 제품 주문을 저장합니다.
     """
     try:
-        from parser.parser.order_parser import parse_order_text
+        from parser.parser.parse_order import parse_order_text
         parsed = parse_order_text(text)
         parsed["회원명"] = member_name
         handle_order_save(parsed)
