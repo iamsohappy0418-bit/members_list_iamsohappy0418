@@ -250,6 +250,7 @@ def guess_intent_entry():
     }), 400
 
 
+# 잘됨
 
 
 
@@ -307,10 +308,12 @@ def find_member():
     }
     """
 
+
     search_params = request.get_json() or {}
-    sheet = get_member_sheet()
-    results = search_members(sheet, search_params)
+    sheet = get_member_sheet()                 # Worksheet
+    results = search_members(sheet, search_params)   # ✅ Worksheet도 처리 가능
     return jsonify(results)
+
     
 
 
