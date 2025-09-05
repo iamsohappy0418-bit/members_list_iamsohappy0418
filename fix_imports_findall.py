@@ -5,7 +5,7 @@ import re
 
 # 정확히 교체할 대상 (import 구문 전체 문자열 기준)
 
-OLD = r"query_multi"
+OLD = r"get_google_sheet"
 
 # NEW = r"query_multi"
 

@@ -264,16 +264,17 @@ def member_find_auto():
     회원 조회 자동 분기 API
     📌 설명:
     - 자연어 기반 요청(text, query 포함) → search_by_natural_language
-    - JSON 기반 요청(회원명, 회원번호 포함) → find_member_route
+    - JSON 기반 요청(회원명, 회원번호 포함) → find_member
     """
-    text = (request.get_json(silent=True) or {}).get("text", "").strip()
+    data = request.get_json(silent=True) or {}
+    text = data.get("text", "").strip()
 
-    # 단문 → 무조건 조회
+    # 단문 패턴 → 무조건 조회
     if re.fullmatch(r"코드\s*[A-Za-z0-9]+", text) \
        or re.fullmatch(r"[가-힣]{2,4}", text) \
        or re.fullmatch(r"\d{3}-\d{3,4}-\d{4}", text) \
        or re.fullmatch(r"\d{5,}", text):
-        return jsonify({"status": "success", "action": "find_member"})
+        return find_member()   # ✅ 실제 함수 실행
 
     # 키워드 기반 분기
     if any(k in text for k in ["등록", "추가"]):
@@ -283,11 +284,10 @@ def member_find_auto():
     if any(k in text for k in ["삭제", "지워", "제거"]):
         return jsonify({"status": "success", "action": "delete_member"})
     if any(k in text for k in ["조회", "찾아", "검색", "알려줘"]):
-        return jsonify({"status": "success", "action": "find_member"})
+        return find_member()   # ✅ 실제 함수 실행
 
-    return jsonify({"status": "error", "message": "❌ 회원 요청 해석 불가"}), 400
-
-
+    # 기본은 자연어 검색
+    return search_by_natural_language()
 
 
 
@@ -307,11 +307,10 @@ def find_member():
     }
     """
 
-    search_params = request.args.to_dict()
-    sheet = get_google_sheet(client, SPREADSHEET_ID, WORKSHEET_NAME)
+    search_params = request.get_json() or {}
+    sheet = get_member_sheet()
     results = search_members(sheet, search_params)
     return jsonify(results)
-
     
 
 
@@ -330,11 +329,29 @@ def search_by_natural_language():
     - {"detail": true} 옵션 → JSON 상세 응답
     - 기본 20건(limit), offset으로 페이지네이션
     """
-    data = request.get_json()
+    data = request.get_json() or {}
     query = (data.get("query") or "").strip()
     detail = bool(data.get("detail", False))
     offset = int(data.get("offset", 0))
-    limit = 20  # ✅ 기본 20건 유지
+    limit = 20
+
+    if not query:
+        return jsonify({"error": "검색어(query)가 필요합니다."}), 400
+
+    conditions = parse_natural_query(query)
+    sheet = get_member_sheet()
+    results = search_members(sheet, conditions)
+
+    if not detail:
+        # 요약 응답 (회원명, 회원번호, 휴대폰번호, 코드만)
+        simplified = [
+            {k: row.get(k) for k in ["회원명", "회원번호", "휴대폰번호", "코드"]}
+            for row in results
+        ]
+        return jsonify(simplified[offset:offset+limit])
+
+    # 상세 응답
+    return jsonify(results[offset:offset+limit])
 
 
 
@@ -348,7 +365,7 @@ def search_member_by_natural_text():
         return jsonify({"error": "검색어가 비어있습니다."}), 400
 
     conditions = parse_natural_query(query)
-    sheet = get_google_sheet(client, SPREADSHEET_ID, WORKSHEET_NAME)
+    sheet = get_member_sheet()
     results = search_members(sheet, conditions)
     return jsonify(results)
 
@@ -471,6 +488,10 @@ def save_member():
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
+
+
+
 
 
 
