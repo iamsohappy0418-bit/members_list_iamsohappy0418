@@ -6,14 +6,11 @@ import base64
 import traceback
 from datetime import datetime, timedelta, timezone
 
+
 # ===== 3rd party =====
 import requests
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
-
-from itertools import chain
-
-
 
 # ===== project: config =====
 from config import (
@@ -23,51 +20,66 @@ from config import (
     SHEET_MAP,
 )
 
-# ===== project: utils =====
-from utils.common import (
-    now_kst,
-    process_order_date,
-    remove_josa,
-    remove_spaces,
-    split_to_parts,
-    parse_dt,      
-    is_match,       
+# ===== project: utils (공용 함수는 __init__.py 통해 관리) =====
+from utils import (
+    # 날짜/시간
+    now_kst, process_order_date, parse_dt,
+    # 문자열 정리 및 보조
+    clean_content,
+    remove_josa, remove_spaces, split_to_parts,
+    is_match, match_condition,
+    # 시트 기본
+    get_sheet, get_worksheet, get_member_sheet,
+    append_row, update_cell, safe_update_cell, delete_row,
+    # 메모 관련
+    get_memo_results, format_memo_results, filter_results_by_member,
+    handle_search_memo,  # ✅ 추가
+    search_members, parse_natural_query,
 )
+
+# ===== project: utils (도메인 전용 → 직접 import) =====
+from utils.text_cleaner import clean_tail_command, clean_value_expression
 from utils.sheets import (
-    get_sheet,
-    get_worksheet,
-    get_member_sheet,
     get_product_order_sheet,
     get_commission_sheet,
-    append_row,
-    update_cell,
-    safe_update_cell,
-    delete_row,
+    get_counseling_sheet,
+    get_personal_memo_sheet,
+    get_activity_log_sheet,
 )
-from utils.clean_content import clean_content
+from utils.openai_utils import extract_order_from_uploaded_image, parse_order_from_text
+from utils.member_query_parser import infer_member_field, parse_natural_query_multi
 from utils.http import call_memberslist_add_orders, call_impact_sync
-from utils.openai_utils import (
-    extract_order_from_uploaded_image,
-    
-)
 
-from utils import format_memo_results
-
-
-# ===== parser: member =====
 # ===== parser =====
 from parser import (
     parse_registration,
     parse_request_and_update,
     parse_natural_query,
     parse_deletion_request,
-  
     parse_memo,
     parse_commission,
     guess_intent,
 )
 
+from parser.order_parser import (
+    parse_order_text,
+    parse_order_text_rule,
+    parse_order_from_text,
+)
 
+from parser.memo_parser import (
+    parse_request_line,
+)
+
+from parser.commission_parser import (
+    process_date,
+    clean_commission_data,
+)
+
+
+from parser.field_map import field_map
+
+# ===== service =====
 from service.member_service import (
     find_member_internal,
     clean_member_data,
@@ -75,14 +87,9 @@ from service.member_service import (
     update_member_internal,
     delete_member_internal,
     delete_member_field_nl_internal,
+    process_member_query,
 )
 
-# ===== parser: order =====
-from parser.order_parser import (
-    parse_order_text,
-    parse_order_text_rule,
-    parse_order_from_text,
-)
 from service.order_service import (
     addOrders,
     handle_order_save,
@@ -96,23 +103,13 @@ from service.order_service import (
     save_order_to_sheet,
 )
 
-# ===== parser: memo =====
-from parser.memo_parser import (
-    parse_memo,
-    parse_request_line,
-)
 from service.memo_service import (
     save_memo,
     find_memo,
     search_in_sheet,
-    search_memo_core 
+    search_memo_core,
 )
 
-# ===== parser: commission =====
-from parser.commission_parser import (
-    process_date,
-    clean_commission_data,
-)
 from service.commission_service import (
     find_commission,
     register_commission,
@@ -120,11 +117,32 @@ from service.commission_service import (
     delete_commission,
 )
 
-# ===== parser: intent =====
-from parser.intent_parser import guess_intent
 
-# ===== field map =====
-from parser.field_map import field_map
+
+
+# --------------------------------------------------
+# Google Sheets
+# --------------------------------------------------
+SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
+WORKSHEET_NAME = os.getenv("WORKSHEET_NAME", "DB")
+SERVICE_ACCOUNT_FILE = os.getenv("GOOGLE_SERVICE_ACCOUNT", "credentials.json")
+
+# --------------------------------------------------
+# OpenAI
+# --------------------------------------------------
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_API_URL = os.getenv("OPENAI_API_URL")
+PROMPT_ID = os.getenv("PROMPT_ID")
+PROMPT_VERSION = os.getenv("PROMPT_VERSION")
+
+# --------------------------------------------------
+# Memberslist API
+# --------------------------------------------------
+MEMBERSLIST_API_URL = os.getenv("MEMBERSLIST_API_URL")
+
+
+
+
 
 
 
@@ -182,6 +200,61 @@ def debug_sheets():
 
 
 
+<<<<<<< HEAD
+=======
+
+
+def guess_intent(text: str) -> str:
+    """
+    자연어 문장에서 intent 추측
+    - 회원 / 주문 / 메모 / 후원수당 카테고리 구분
+    """
+    text = (text or "")
+    # 회원
+    if "회원" in text:
+        return "member_find_auto"
+    # 주문
+    if "주문" in text:
+        return "order_find_auto"
+    # 메모 / 일지
+    if any(k in text for k in ["상담일지", "개인일지", "활동일지", "메모"]):
+        return "memo_find_auto"
+    # 후원수당
+    if "후원수당" in text:
+        return "commission_find_auto"
+    return "unknown"
+
+
+@app.route("/guess_intent", methods=["POST"])
+def guess_intent_entry():
+    """
+    자연어 입력의 진입점
+    - intent를 판별하고 해당 자동 분기 API로 redirect
+    """
+    data = request.get_json(silent=True) or {}
+    text = data.get("text", "")
+
+    intent = guess_intent(text)
+
+    if intent == "member_find_auto":
+        return redirect("/member_find_auto")
+    if intent == "order_find_auto":
+        return redirect("/order_find_auto")
+    if intent == "memo_find_auto":
+        return redirect("/memo_find_auto")
+    if intent == "commission_find_auto":
+        return redirect("/commission_find_auto")
+
+    return jsonify({
+        "status": "error",
+        "message": f"❌ 처리할 수 없는 요청입니다. (intent={intent})"
+    }), 400
+
+
+
+
+
+>>>>>>> 7ddb26a0b3d2e3434692f07ebf049295782b3c6c
 
 # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 # ======================================================================================
@@ -195,21 +268,28 @@ def member_find_auto():
     - 자연어 기반 요청(text, query 포함) → search_by_natural_language
     - JSON 기반 요청(회원명, 회원번호 포함) → find_member_route
     """
-    data = request.get_json(silent=True) or {}
+    text = (request.get_json(silent=True) or {}).get("text", "").strip()
 
-    # 자연어 기반
-    if "text" in data or "query" in data:
-        return search_by_natural_language()
+    # 단문 → 무조건 조회
+    if re.fullmatch(r"코드\s*[A-Za-z0-9]+", text) \
+       or re.fullmatch(r"[가-힣]{2,4}", text) \
+       or re.fullmatch(r"\d{3}-\d{3,4}-\d{4}", text) \
+       or re.fullmatch(r"\d{5,}", text):
+        return jsonify({"status": "success", "action": "find_member"})
 
-    # JSON 기반
-    if "회원명" in data or "회원번호" in data:
-        return find_member_route()
+    # 키워드 기반 분기
+    if any(k in text for k in ["등록", "추가"]):
+        return jsonify({"status": "success", "action": "register_member"})
+    if any(k in text for k in ["수정", "변경", "업데이트"]):
+        return jsonify({"status": "success", "action": "update_member"})
+    if any(k in text for k in ["삭제", "지워", "제거"]):
+        return jsonify({"status": "success", "action": "delete_member"})
+    if any(k in text for k in ["조회", "찾아", "검색", "알려줘"]):
+        return jsonify({"status": "success", "action": "find_member"})
 
-    return jsonify({
-        "status": "error",
-        "message": "❌ 입력이 올바르지 않습니다. "
-                   "자연어는 'text/query', JSON은 '회원명/회원번호'를 포함해야 합니다."
-    }), 400
+    return jsonify({"status": "error", "message": "❌ 회원 요청 해석 불가"}), 400
+
+
 
 
 
@@ -218,7 +298,7 @@ def member_find_auto():
 # ✅ 회원 조회 (JSON 전용)
 # ======================================================================================
 @app.route("/find_member", methods=["POST"])
-def find_member_route():
+def find_member():
     """
     회원 조회 API (JSON 전용)
     📌 설명:
@@ -228,24 +308,12 @@ def find_member_route():
       "회원명": "신금자"
     }
     """
-    try:
-        data = request.get_json()
-        name = data.get("회원명", "").strip()
-        number = data.get("회원번호", "").strip()
 
-        if not name and not number:
-            return jsonify({"error": "회원명 또는 회원번호를 입력해야 합니다."}), 400
+    search_params = request.args.to_dict()
+    sheet = get_google_sheet(client, SPREADSHEET_ID, WORKSHEET_NAME)
+    results = search_members(sheet, search_params)
+    return jsonify(results)
 
-        matched = find_member_internal(name, number)
-        if not matched:
-            return jsonify({"error": "해당 회원 정보를 찾을 수 없습니다."}), 404
-
-        if len(matched) == 1:
-            return jsonify(clean_member_data(matched[0])), 200
-        return jsonify([clean_member_data(m) for m in matched]), 200
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
     
 
 
@@ -258,56 +326,39 @@ def search_by_natural_language():
     """
     회원 자연어 검색 API (자연어 전용)
     📌 설명:
-    자연어 문장에서 (필드, 키워드)를 추출하여 DB 시트에서 회원을 검색합니다.
-    📥 입력(JSON 예시):
-    {
-      "query": "계보도 장천수 우측"
-    }
+    - 자연어 문장에서 (필드, 키워드) 조건들을 추출하여 DB 시트에서 회원 검색
+    - 조건 여러 개 입력 시 AND 검색
+    - 기본은 텍스트 리스트 출력 (회원명, 회원번호, 휴대폰번호, 특수번호, 코드만 표시)
+    - {"detail": true} 옵션 → JSON 상세 응답
+    - 기본 20건(limit), offset으로 페이지네이션
     """
     data = request.get_json()
-    query = data.get("query")
-    if not query:
-        return Response("query 파라미터가 필요합니다.", status=400)
-
+    query = (data.get("query") or "").strip()
+    detail = bool(data.get("detail", False))
     offset = int(data.get("offset", 0))
-
-    field, keyword = parse_natural_query(query)
-    if not field or not keyword:
-        return Response("자연어에서 검색 필드와 키워드를 찾을 수 없습니다.", status=400)
-
-    try:
-        sheet = get_member_sheet()
-        records = sheet.get_all_records()
-
-        normalized_field = field.strip()
-        normalized_keyword = keyword.strip().lower()
-        if normalized_field == "계보도":
-            normalized_keyword = normalized_keyword.replace(" ", "")
-
-        filtered = [
-            m for m in records
-            if normalized_keyword == str(m.get(normalized_field, "")).strip().lower().replace(" ", "")
-        ]
-        filtered.sort(key=lambda m: m.get("회원명", ""))
-
-        lines = [
-            f"{m.get('회원명', '')} (회원번호: {m.get('회원번호', '')}" +
-            (f", 연락처: {m.get('휴대폰번호', '')}" if m.get('휴대폰번호', '') else "") +
-            ")"
-            for m in filtered[offset:offset+40]
-        ]
-
-        if offset + 40 < len(filtered):
-            lines.append("--- 다음 있음 ---")
-
-        response_text = "\n".join(lines) if lines else "조건에 맞는 회원이 없습니다."
-        return Response(response_text, mimetype='text/plain')
-
-    except Exception as e:
-        return Response(f"[서버 오류] {str(e)}", status=500)
+    limit = 20  # ✅ 기본 20건 유지
 
 
+<<<<<<< HEAD
     
+=======
+
+
+
+
+@app.route("/searchMemberByNaturalText", methods=["GET"])
+def search_member_by_natural_text():
+    query = request.args.get("query", "").strip()
+    if not query:
+        return jsonify({"error": "검색어가 비어있습니다."}), 400
+
+    conditions = parse_natural_query(query)
+    sheet = get_google_sheet(client, SPREADSHEET_ID, WORKSHEET_NAME)
+    results = search_members(sheet, conditions)
+    return jsonify(results)
+
+
+>>>>>>> 7ddb26a0b3d2e3434692f07ebf049295782b3c6c
 
 
 # ======================================================================================
@@ -935,6 +986,43 @@ def memo_save_auto():
 
 
 
+# @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+# ======================================================================================
+# 자동 분기 메모 저장
+# ======================================================================================
+@app.route("/memo_save_auto", methods=["POST"])
+def memo_save_auto():
+    """
+    메모 저장 자동 분기 API
+    📌 설명:
+    - JSON 입력(일지종류, 회원명, 내용) → save_memo_route
+    - 자연어 입력(요청문) → add_counseling_route
+    📥 입력(JSON 예시1 - JSON 전용):
+    {
+      "일지종류": "상담일지",
+      "회원명": "홍길동",
+      "내용": "오늘은 제품설명회를 진행했습니다."
+    }
+    📥 입력(JSON 예시2 - 자연어 전용):
+    {
+      "요청문": "이태수 상담일지 저장 오늘부터 슬림바디 다시 시작"
+    }
+    """
+    data = request.get_json(silent=True) or {}
+
+    if "요청문" in data or "text" in data:
+        return add_counseling_route()
+    
+    if "일지종류" in data and "회원명" in data:
+        return save_memo_route()
+
+    return jsonify({
+        "status": "error",
+        "message": "❌ 입력이 올바르지 않습니다.\n자연어는 '요청문/text', JSON은 '일지종류/회원명/내용'을 포함해야 합니다."
+    }), 400
+
+
+
 
 # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 # ======================================================================================
@@ -972,6 +1060,9 @@ def save_memo_route():
         return jsonify({"status": "error", "error": str(e)}), 500
 
 
+
+
+
 # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 # ======================================================================================
 # 자연어 전용 메모 저장
@@ -980,12 +1071,7 @@ def save_memo_route():
 def add_counseling_route():
     """
     상담/개인/활동 일지 저장 API (자연어 전용)
-    📌 설명:
-    자연어 요청문을 파싱하여 상담일지/개인일지/활동일지 시트에 저장합니다.
-    📥 입력(JSON 예시):
-    {
-      "요청문": "이태수 상담일지 저장 오늘부터 슬림바디 다시 시작"
-    }
+    예: {"요청문": "이태수 상담일지 저장 오늘부터 슬림바디 다시 시작"}
     """
     try:
         data = request.get_json(silent=True) or {}
@@ -993,22 +1079,51 @@ def add_counseling_route():
 
         match = re.search(r"([가-힣]{2,10})\s*(상담일지|개인일지|활동일지)\s*저장", text)
         if not match:
-            return jsonify({"status": "error", "error": "회원명 또는 일지종류를 인식할 수 없습니다."}), 400
+            return jsonify({
+                "status": "error",
+                "message": "❌ 회원명 또는 일지종류를 인식할 수 없습니다."
+            }), 400
 
         member_name = match.group(1).strip()
         sheet_type = match.group(2)
 
-        content = text.replace(f"{member_name} {sheet_type} 저장", "").strip()
+        # ✅ "저장" 또는 "저장."까지 포함된 부분 제거
+        pattern = rf"{re.escape(member_name)}\s*{sheet_type}\s*저장\.?"
+        raw_content = re.sub(pattern, "", text).strip()
+
+        # ✅ 불필요한 기호 + 회원명 제거
+        content = clean_content(raw_content, member_name=member_name)
         if not content:
-            return jsonify({"status": "error", "error": "저장할 내용이 비어 있습니다."}), 400
+            return jsonify({
+                "status": "error",
+                "message": "❌ 저장할 내용이 비어 있습니다."
+            }), 400
 
         ok = save_memo(sheet_type, member_name, content)
         if ok:
-            return jsonify({"status": "success", "message": f"{member_name}님의 {sheet_type} 저장 완료"}), 201
-        return jsonify({"status": "error", "error": "시트 저장에 실패했습니다."}), 500
+            now_str = now_kst().strftime("%Y-%m-%d %H:%M")
+
+            # ✅ 내용 길이 제한 (50자까지만 표시)
+            max_len = 50
+            preview = content if len(content) <= max_len else content[:max_len] + "…"
+
+            return jsonify({
+                "status": "success",
+                "message": (
+                    f"✅ {member_name}님의 {sheet_type}가 저장되었습니다.\n"
+                    f"날짜: {now_str}\n"
+                    f"내용: {preview}"
+                )
+            }), 201
+
+        return jsonify({
+            "status": "error",
+            "message": "❌ 시트 저장에 실패했습니다."
+        }), 500
 
     except Exception as e:
         traceback.print_exc()
+<<<<<<< HEAD
         return jsonify({"status": "error", "error": str(e)}), 500
 
 
@@ -1028,7 +1143,14 @@ def add_counseling_route():
 
 
 
+=======
+        return jsonify({
+            "status": "error",
+            "message": f"[서버 오류] {str(e)}"
+        }), 500
+>>>>>>> 7ddb26a0b3d2e3434692f07ebf049295782b3c6c
 
+    
 
 
 
@@ -1037,6 +1159,7 @@ def add_counseling_route():
 
 
     
+
 
 # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 # ======================================================================================
@@ -1050,26 +1173,25 @@ def memo_find_auto():
     - 자연어 기반 요청(text, query 포함) → search_memo_from_text
     - JSON 기반 요청(sheet, keywords, member_name 등 포함) → search_memo
     """
-    data = request.get_json(silent=True) or {}
+    text = (request.get_json(silent=True) or {}).get("text", "").strip()
 
-    # ✅ 자연어 기반: query / text 가 있을 때
-    if "query" in data or "text" in data:
-        return search_memo_from_text()
+    # 단문 → 조회 (짧은 단어는 검색 키워드로 간주)
+    if len(text) <= 10:  # 예: "포항", "중국"
+        return jsonify({"status": "success", "action": "find_memo"})
 
-    # ✅ JSON 기반: sheet / keywords / member_name 중 하나라도 있을 때
-    if any(k in data for k in ["sheet", "keywords", "member_name"]):
-        return search_memo()
+    if any(k in text for k in ["저장", "작성", "기록"]):
+        return jsonify({"status": "success", "action": "save_memo"})
+    if any(k in text for k in ["조회", "검색", "찾아"]):
+        return jsonify({"status": "success", "action": "find_memo"})
 
-    # ✅ 단일 문자열만 전달된 경우 (ex: { "text": "전체메모 검색 중국" } 로 처리)
-    if isinstance(data, str) and data.strip():
-        return search_memo_from_text()
+    return jsonify({"status": "error", "message": "❌ 메모 요청 해석 불가"}), 400
 
-    return jsonify({
-        "status": "error",
-        "message": "❌ 입력이 올바르지 않습니다. "
-                   "자연어는 'query/text/단일문자열', "
-                   "JSON은 'sheet/keywords/member_name'을 포함해야 합니다."
-    }), 400
+
+
+
+
+
+
 
 
 # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
@@ -1077,86 +1199,38 @@ def memo_find_auto():
 # ✅ API 고급 검색 (content 문자열 기반, 조건식 가능)
 # ======================================================================================
 @app.route("/search_memo", methods=["POST"])
-def search_memo():
+def search_memo_route():
     """
-    메모 고급 검색 API
-    📌 설명:
-    JSON 기반으로 상담/개인/활동 일지를 검색합니다.
-    📥 입력(JSON 예시):
-    {
-        "sheet": "상담일지",       # 상담일지 / 개인일지 / 활동일지 / 전체
-        "keywords": ["중국", "세미나"],
-        "search_mode": "any",    # any | 동시검색
-        "member_name": "이태수",
-        "start_date": "2023-01-01",
-        "end_date": "2023-12-31",
-        "limit": 20
-    }
+    메모 검색 API (자연어 + JSON 파라미터 지원)
+    - text 필드 있으면 자연어 검색
+    - keywords 필드 있으면 JSON 기반 검색
     """
     try:
         data = request.get_json(silent=True) or {}
 
-        sheet = data.get("sheet", "전체")
-        keywords = data.get("keywords", [])
-        search_mode = data.get("search_mode", "any")
-        member_name = data.get("member_name")
-        start_date = data.get("start_date")
-        end_date = data.get("end_date")
-        limit = int(data.get("limit", 20)) or 20  # 기본값 20
+        # ✅ 유틸 함수 실행 (자동 분기)
+        results = handle_search_memo(data) or []
 
-        # ✅ 검색할 시트 결정
-        if sheet == "상담일지":
-            sheet_names = ["상담일지"]
-        elif sheet == "개인일지":
-            sheet_names = ["개인일지"]
-        elif sheet == "활동일지":
-            sheet_names = ["활동일지"]
-        else:
-            sheet_names = ["상담일지", "개인일지", "활동일지"]
-
-        all_results = []
-        for sheet_name in sheet_names:
-            partial = search_memo_core(
-                sheet_name=sheet_name,
-                keywords=keywords,
-                search_mode=search_mode,
-                member_name=member_name,
-                limit=limit
-            )
-            all_results.extend(partial)
-
-        # ✅ 정렬 (기본 최신순)
-        try:
-            all_results.sort(
-                key=lambda x: datetime.strptime(
-                    x.get("작성일자", "1900-01-01 00:00"),
-                    "%Y-%m-%d %H:%M"
-                ),
-                reverse=True
-            )
-        except Exception:
-            pass
-
-        has_more = len(all_results) > limit
-        results = all_results[:limit]
+        # ✅ 사람이 읽기 좋은 보고서 포맷팅
+        formatted_report = format_memo_results(results)
 
         return jsonify({
             "status": "success",
-            "sheets": sheet_names,
-            "keywords": keywords,
-            "search_mode": search_mode,
-            "member_name": member_name,
-            "limit": limit,
-            "results": results,
-            "has_more": has_more
+            "input": data,
+            "results": results,        # 원본 JSON 결과
+            "report": formatted_report # 사람이 읽기 좋은 텍스트
         }), 200
 
     except Exception as e:
-        traceback.print_exc()
+        import traceback; traceback.print_exc()
         return jsonify({
             "status": "error",
-            "message": str(e)
+            "message": f"❌ 메모 검색 중 오류: {str(e)}"
         }), 500
+
+
+
+
 
 
 
@@ -1171,16 +1245,14 @@ def search_memo():
 @app.route("/search_memo_from_text", methods=["POST"])
 def search_memo_from_text():
     """
-    자연어 메모 검색 API (페이지네이션 + 일지 분류 출력 + 순서 고정 + 텍스트/JSON 선택)
+    자연어 메모 검색 API
     📌 설명:
-    - 기본 출력: 사람이 읽기 좋은 텍스트 블록
-    - {"detail": true} 옵션 추가 시: JSON 상세 구조 반환
+    - 항상 사람이 읽기 좋은 블록(text)과 카테고리별 분리 정보(lists)를 함께 반환
+    - iPad 화면은 text만 그대로 표시하면 되고
+    - 카테고리별 필터링/탭 기능은 lists를 사용하면 됨
     """
     data = request.get_json(silent=True) or {}
     text = (data.get("text") or "").strip()
-    limit = int(data.get("limit", 20))
-    offset = int(data.get("offset", 0))
-    detail = data.get("detail", False)
 
     if not text:
         return jsonify({"error": "text가 비어 있습니다."}), 400
@@ -1246,13 +1318,14 @@ def search_memo_from_text():
     try:
         all_results.sort(
             key=lambda x: datetime.strptime(
-                x.get("작성일자", "1900-01-01 00:00"), "%Y-%m-%d %H:%M"
+                str(x.get("날짜", "1900-01-01")).split()[0], "%Y-%m-%d"
             ),
             reverse=True
         )
     except Exception:
         pass
 
+<<<<<<< HEAD
     # ✅ 일지별 그룹핑 (출력 순서 고정)
     grouped = {"활동일지": [], "상담일지": [], "개인일지": []}
     for item in all_results:
@@ -1294,10 +1367,46 @@ def search_memo_from_text():
             "formatted_text": response_text,
             "has_more": any(len(v) > limit for v in grouped.values())
         }), 200
+=======
+    # ✅ format_memo_results 적용
+    formatted = format_memo_results(all_results)
+
+    # ✅ 최종 응답: text + lists 동시 제공
+    return jsonify({
+        "status": "success",
+        "text": formatted["text"],      # 사람이 읽기 좋은 전체 블록
+        "lists": formatted["lists"],    # 카테고리별 분리 정보
+        "keywords": keywords,
+        "member_name": member_name,
+        "sheets": sheet_names,
+        "search_mode": search_mode
+    }), 200
+>>>>>>> 7ddb26a0b3d2e3434692f07ebf049295782b3c6c
 
 
 
 
+<<<<<<< HEAD
+=======
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+
+
+
+>>>>>>> 7ddb26a0b3d2e3434692f07ebf049295782b3c6c
 # ======================================================================================
 # ✅ 메모(note: 상담일지/개인일지/활동일지) 저장
 # ======================================================================================
@@ -1606,8 +1715,9 @@ def commission_find_auto():
     - 자연어 기반 요청(query, text) → search_commission_by_nl
     - JSON 기반 요청(회원명) → find_commission_route
     """
-    data = request.get_json(silent=True) or {}
+    text = (request.get_json(silent=True) or {}).get("text", "").strip()
 
+<<<<<<< HEAD
     # ✅ 자연어 기반
     if "query" in data or "text" in data:
         return search_commission_by_nl()
@@ -1626,6 +1736,19 @@ def commission_find_auto():
                    "자연어는 'query/text/단일문자열', "
                    "JSON은 '회원명'을 포함해야 합니다."
     }), 400
+=======
+    # 단문 → 조회 (주문번호 같은 경우)
+    if re.fullmatch(r"\d{5,}", text):
+        return jsonify({"status": "success", "action": "find_order"})
+
+    if "저장" in text:
+        return jsonify({"status": "success", "action": "save_order"})
+    if any(k in text for k in ["조회", "검색", "찾아"]):
+        return jsonify({"status": "success", "action": "find_order"})
+
+    return jsonify({"status": "error", "message": "❌ 주문 요청 해석 불가"}), 400
+
+>>>>>>> 7ddb26a0b3d2e3434692f07ebf049295782b3c6c
 
 
 
@@ -1690,11 +1813,162 @@ def search_commission_by_nl():
         return Response(f"[서버 오류] {str(e)}", status=500)
 
 
+<<<<<<< HEAD
+=======
+# ======================================================================================
+# ✅ 후원수당 조회 (자동 분기)
+# ======================================================================================
+@app.route("/commission_find_auto", methods=["POST"])
+def commission_find_auto():
+    text = (request.get_json(silent=True) or {}).get("text", "").strip()
+
+    # 단문 → 조회 (숫자 ID, 짧은 키워드 등)
+    if re.fullmatch(r"\d{5,}", text):
+        return jsonify({"status": "success", "action": "find_commission"})
+
+    if any(k in text for k in ["등록", "추가", "저장"]):
+        return jsonify({"status": "success", "action": "save_commission"})
+    if any(k in text for k in ["조회", "검색", "알려줘"]):
+        return jsonify({"status": "success", "action": "find_commission"})
+
+    return jsonify({"status": "error", "message": "❌ 후원수당 요청 해석 불가"}), 400
+>>>>>>> 7ddb26a0b3d2e3434692f07ebf049295782b3c6c
 
 
 
 
+<<<<<<< HEAD
+=======
 
+
+# 잘됨
+
+
+
+import html
+
+@app.route("/debug_routes", methods=["GET"])
+def debug_routes():
+    routes = []
+    for rule in app.url_map.iter_rules():
+        func = app.view_functions[rule.endpoint]
+        routes.append({
+            "url": str(rule),
+            "endpoint": rule.endpoint,
+            "methods": list(rule.methods),
+            "function_name": func.__name__,
+            "function_module": func.__module__
+        })
+    return jsonify(routes)
+
+
+@app.route("/debug_routes_table", methods=["GET"])
+def debug_routes_table():
+    def clean_methods(mset):
+        # Flask가 자동 추가하는 OPTIONS/HEAD는 가독성 위해 제외
+        return ", ".join(sorted([m for m in mset if m not in {"OPTIONS", "HEAD"}])) or "GET"
+
+    rows = []
+    for rule in app.url_map.iter_rules():
+        func = app.view_functions.get(rule.endpoint)
+        if not func:
+            continue
+        mod = getattr(func, "__module__", "")
+        name = getattr(func, "__name__", getattr(func, "__qualname__", ""))
+        code = getattr(func, "__code__", None)
+        file = getattr(code, "co_filename", "")
+        line = getattr(code, "co_firstlineno", "")
+        rows.append({
+            "url": str(rule),
+            "methods": clean_methods(rule.methods),
+            "endpoint": rule.endpoint,
+            "function_name": name,
+            "module": mod,
+            "file": file,
+            "line": line,
+        })
+
+    # URL 기준 정렬
+    rows.sort(key=lambda r: r["url"])
+
+    # 간단한 HTML 테이블 렌더
+    head = """
+    <style>
+      body{font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;padding:24px}
+      table{border-collapse:collapse;width:100%}
+      th,td{border:1px solid #ddd;padding:8px;font-size:14px}
+      th{background:#f5f5f7;text-align:left}
+      tr:nth-child(even){background:#fafafa}
+      .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace}
+      .toolbar{margin-bottom:12px;display:flex;gap:12px;align-items:center}
+      input{padding:6px 10px;border:1px solid #ccc;border-radius:6px;min-width:260px}
+      .count{color:#666}
+    </style>
+    <div class="toolbar">
+      <input id="q" placeholder="필터: URL / endpoint / function / module / file" oninput="filter()">
+      <span class="count" id="count"></span>
+      <a href="/debug_routes_table?format=csv">CSV 다운로드</a>
+    </div>
+    <table id="tbl">
+      <thead>
+        <tr>
+          <th style="width:22%">URL</th>
+          <th style="width:10%">Methods</th>
+          <th style="width:16%">Endpoint</th>
+          <th style="width:16%">Function</th>
+          <th style="width:12%">Module</th>
+          <th>File:Line</th>
+        </tr>
+      </thead>
+      <tbody>
+    """
+    body = []
+    for r in rows:
+        body.append(
+            "<tr>" +
+            f"<td class='mono'>{html.escape(r['url'])}</td>" +
+            f"<td>{html.escape(r['methods'])}</td>" +
+            f"<td class='mono'>{html.escape(r['endpoint'])}</td>" +
+            f"<td class='mono'>{html.escape(r['function_name'])}</td>" +
+            f"<td class='mono'>{html.escape(r['module'])}</td>" +
+            f"<td class='mono'>{html.escape(r['file'])}:{r['line']}</td>" +
+            "</tr>"
+        )
+    tail = """
+      </tbody>
+    </table>
+    <script>
+      const q = document.getElementById('q');
+      const tbl = document.getElementById('tbl').getElementsByTagName('tbody')[0];
+      const rows = Array.from(tbl.rows);
+      const count = document.getElementById('count');
+      function filter(){
+        const term = (q.value || '').toLowerCase();
+        let shown = 0;
+        rows.forEach(tr=>{
+          const text = tr.innerText.toLowerCase();
+          const ok = !term || text.includes(term);
+          tr.style.display = ok ? '' : 'none';
+          if(ok) shown++;
+        });
+        count.textContent = `표시: ${shown} / 전체: ${rows.length}`;
+      }
+      filter();
+    </script>
+    """
+    # CSV 모드 지원 (?format=csv)
+    if (request.args.get("format", "").lower() == "csv"):
+        import csv, io as _io
+        buf = _io.StringIO()
+        writer = csv.DictWriter(buf, fieldnames=["url","methods","endpoint","function_name","module","file","line"])
+        writer.writeheader()
+        for r in rows:
+            writer.writerow(r)
+        return Response(buf.getvalue(), mimetype="text/csv",
+                        headers={"Content-Disposition": "attachment; filename=routes.csv"})
+>>>>>>> 7ddb26a0b3d2e3434692f07ebf049295782b3c6c
+
+    return Response(head + "\n".join(body) + tail, mimetype="text/html")
 
 
 

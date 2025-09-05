@@ -3,16 +3,16 @@ import json
 from typing import Any, Dict, List
 from flask import jsonify
 
-# utils
-from utils.sheets import get_order_sheet, get_worksheet, append_row, delete_row, safe_update_cell
-from utils.common import process_order_date, now_kst
-from utils.openai_utils import extract_order_from_uploaded_image, parse_order_from_text
+from utils import (
+    get_product_order_sheet, get_worksheet, append_row, delete_row, safe_update_cell,
+    process_order_date, now_kst,
+    extract_order_from_uploaded_image, parse_order_from_text,
+)
 
-# config
 from config import MEMBERSLIST_API_URL
+from service.member_service import find_member_in_text
 
-# 📌 회원명 보정을 위해 추가
-from service.member_service import find_member_in_text  
+
 
 
 

@@ -1,76 +1,102 @@
 # utils/__init__.py
 
-# 공통 함수
-from .common import (
+# =====================================================
+# ✅ 공통 유틸 함수 모음 (전역에서 자주 쓰이는 함수만 export)
+# =====================================================
+
+# 날짜/시간 처리
+from .date_utils import (
     now_kst,
     process_order_date,
-    remove_josa,
+    parse_dt,
 )
 
-# Google Sheets 유틸
+# 문자열 정리 (자연어 처리 중심)
+from .text_cleaner import (
+    clean_content,   # 핵심만 공개
+    clean_tail_command,   # ✅ 추가
+    clean_value_expression,  # ✅ 추가
+)
+
+# 문자열 유틸 (기본 처리)
+from .string_utils import (
+    remove_josa,
+    remove_spaces,
+    split_to_parts,
+    is_match,
+    match_condition,
+)
+
+# Google Sheets 기본 유틸
 from .sheets import (
     get_sheet,
     get_worksheet,
     get_member_sheet,
     get_product_order_sheet,
+    get_counseling_sheet,
+    get_personal_memo_sheet,
+    get_activity_log_sheet,
+    get_commission_sheet,
     append_row,
     update_cell,
     safe_update_cell,
     delete_row,
 )
 
-# API / HTTP 유틸
-
-
-
-# 문자열 처리
-from .clean_content import clean_content
-
-# OpenAI 연동
-from .openai_utils import (
-    extract_order_from_uploaded_image,
-    parse_order_from_text,
-)
-
-
-# 메모 검색/출력 유틸
+# 메모 관련 기본 유틸
 from .memo_utils import (
     get_memo_results,
     format_memo_results,
     filter_results_by_member,
+    handle_search_memo,   # ✅ 추가
+    
 )
 
+# OpenAI 관련 (주문 파싱 등)
+from .openai_utils import (
+    extract_order_from_uploaded_image,   # ✅ 추가
+    parse_order_from_text,               # ✅ 같이 추가
+)
 
-
-
-
-
-
-
+# 검색 관련 유틸
+from .search_utils import (
+    search_members,
+    parse_natural_query,
+)
 
 
 
 
 __all__ = [
-    # common.py
-    "now_kst", "process_order_date", "remove_josa",
+    # date_utils
+    "now_kst", "process_order_date", "parse_dt",
 
-    # sheets.py
-    "get_sheet", "get_worksheet", "get_member_sheet", "get_product_order_sheet",
+    # text_cleaner
+    "clean_content", "clean_tail_command", "clean_value_expression",  # ✅ 추가
+
+    # string_utils
+    "remove_josa", "remove_spaces", "split_to_parts",
+    "is_match", "match_condition",
+
+    # sheets
+    "get_sheet", "get_worksheet",
+    "get_member_sheet", "get_product_order_sheet",
+    "get_counseling_sheet", "get_personal_memo_sheet",
+    "get_activity_log_sheet", "get_commission_sheet",
     "append_row", "update_cell", "safe_update_cell", "delete_row",
 
-    # api/http
- 
-
-    # clean_content
-    "clean_content",
+    # memo_utils
+    "get_memo_results", "format_memo_results", "filter_results_by_member",
+    "handle_search_memo",  # ✅ 추가
 
     # openai_utils
     "extract_order_from_uploaded_image", "parse_order_from_text",
 
-    # memo_utils
-    "get_memo_results", "format_memo_results", "filter_results_by_member",
-
+    # search_utils
+    "search_members", "parse_natural_query",
 
 
 ]
+
+
+

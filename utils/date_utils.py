@@ -1,23 +1,6 @@
-import time
 import re
 from datetime import datetime, timedelta, timezone
-import pytz
-from typing import Optional
 
-
-# ======================================================================================
-# ✅ 디버그용 유틸
-# ======================================================================================
-def simulate_delay(seconds: int = 1):
-    """작업 시작/완료를 출력하며 지정된 시간만큼 대기 (디버그용)"""
-    print("작업 시작")
-    time.sleep(seconds)
-    print("작업 완료")
-
-
-# ======================================================================================
-# ✅ 날짜/시간 유틸
-# ======================================================================================
 def now_kst() -> datetime:
     """한국시간(KST) 기준 현재 시각 반환"""
     return datetime.now(timezone(timedelta(hours=9)))
@@ -44,14 +27,12 @@ def process_order_date(raw_date: str) -> str:
         elif "내일" in text:
             return (today + timedelta(days=1)).strftime('%Y-%m-%d')
 
-        # YYYY-MM-DD
         try:
             dt = datetime.strptime(text, "%Y-%m-%d")
             return dt.strftime("%Y-%m-%d")
         except ValueError:
             pass
 
-        # YYYY.MM.DD / YYYY/MM/DD → YYYY-MM-DD
         match = re.search(r"(20\d{2})[./-](\d{1,2})[./-](\d{1,2})", text)
         if match:
             y, m, d = match.groups()
@@ -61,24 +42,6 @@ def process_order_date(raw_date: str) -> str:
         print(f"[날짜 파싱 오류] {e}")
 
     return now_kst().strftime('%Y-%m-%d')
-
-
-# ======================================================================================
-# ✅ 문자열 보조 유틸
-# ======================================================================================
-def remove_josa(s: str) -> str:
-    """단어 끝의 조사(이/가/은/는/을/를/과/와/의/으로/로) 제거"""
-    return re.sub(r'(이|가|은|는|을|를|과|와|의|으로|로)$', '', s.strip())
-
-
-def remove_spaces(s: str) -> str:
-    """문자열 내 모든 공백 제거"""
-    return re.sub(r'\s+', '', s)
-
-
-def split_to_parts(s: str) -> list[str]:
-    """문자열을 공백 단위로 분리하여 리스트 반환"""
-    return re.split(r'\s+', s.strip())
 
 
 def parse_dt(s: str):
