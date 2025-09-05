@@ -6,15 +6,29 @@ import re
 # ------------------------------
 # 조건에 맞는 데이터 검색
 # ------------------------------
-def search_members(sheet, search_params):
+from datetime import datetime
+
+def search_members(data, search_params):
+    """
+    회원 검색 유틸
+    - data: Worksheet 객체 또는 list(dict)
+    - search_params: {"회원명": "이태수", "가입일자__gte": "2024-01-01"} 등
+    """
+
+    # ✅ Worksheet 객체일 경우 자동 변환
+    if hasattr(data, "get_all_records"):
+        rows = data.get_all_records()
+    else:
+        rows = data
+
     results = []
-    for row in sheet:
+    for row in rows:
         match = True
         for key, value in search_params.items():
             field = key.split("__")[0]
             field_value = str(row.get(field, ""))
 
-            # 날짜 비교
+            # 날짜 비교 (__gte, __lte)
             if "__gte" in key or "__lte" in key:
                 try:
                     field_date = datetime.strptime(field_value, "%Y-%m-%d")
@@ -30,14 +44,19 @@ def search_members(sheet, search_params):
                     match = False
                     break
             else:
-                # OR 조건 + 대소문자 무시
-                values = [v.strip().lower() for v in value.split(",")]
-                if field_value.lower() not in values:
+                # 일반 문자열 비교 (부분 일치, 대소문자 무시)
+                if value.lower() not in field_value.lower():
                     match = False
                     break
+
         if match:
             results.append(row)
+
     return results
+
+
+
+
 
 # ------------------------------
 # 자연어 → 검색 조건 변환
