@@ -4,7 +4,7 @@ parser 패키지 초기화 파일
 """
 
 # 회원 관련 파서
-from .member_parser import (
+from .parser_member import (
     parse_registration,
     parse_request_and_update,
     parse_natural_query,
@@ -18,17 +18,17 @@ from .parse_order import (
 )
 
 # 메모 관련 파서
-from .memo_parser import (
+from .parser_memo import (
     parse_memo,
 )
 
 # 후원수당 관련 파서
-from .commission_parser import (
+from .parser_commission import (
     parse_commission,
 )
 
 # 인텐트 관련 파서
-from .intent_parser import (
+from .parser_intent import (
     guess_intent,
 )
 

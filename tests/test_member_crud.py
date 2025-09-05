@@ -1,5 +1,5 @@
 import pytest
-from service import member_service
+from service import service_member
 
 
 # ==============================
@@ -39,10 +39,10 @@ def dummy_sheet():
 
 @pytest.fixture(autouse=True)
 def patch_get_member_sheet(monkeypatch, dummy_sheet):
-    """service.member_service 내부에서 항상 dummy_sheet를 사용하도록 패치"""
-    monkeypatch.setattr(member_service, "get_member_sheet", lambda: dummy_sheet)
+    """service.service_member 내부에서 항상 dummy_sheet를 사용하도록 패치"""
+    monkeypatch.setattr(service_member, "get_member_sheet", lambda: dummy_sheet)
     monkeypatch.setattr(
-        member_service, "safe_update_cell",
+        service_member, "safe_update_cell",
         lambda ws, r, c, v, clear_first=True: ws.update_cell(r, c, v)
     )
     return dummy_sheet
@@ -53,25 +53,25 @@ def patch_get_member_sheet(monkeypatch, dummy_sheet):
 # ==============================
 def test_member_crud(dummy_sheet):
     # 1) 회원 등록
-    ok = member_service.register_member("홍길동", "123456", "010-1234-5678")
+    ok = service_member.register_member("홍길동", "123456", "010-1234-5678")
     assert ok is True
     records = dummy_sheet.get_all_records()
     assert len(records) == 1
     assert records[0]["회원명"] == "홍길동"
 
     # 2) 회원 조회
-    result = member_service.find_member("홍길동")
+    result = service_member.find_member("홍길동")
     assert isinstance(result, list)
     assert result[0]["회원번호"] == "123456"
 
     # 3) 회원 수정
-    ok = member_service.update_member("홍길동", {"주소": "부산"})
+    ok = service_member.update_member("홍길동", {"주소": "부산"})
     assert ok is True
     records = dummy_sheet.get_all_records()
     assert records[0]["주소"] == "부산"
 
     # 4) 회원 삭제
-    ok = member_service.delete_member("홍길동")
+    ok = service_member.delete_member("홍길동")
     assert ok is True
     assert dummy_sheet.get_all_records() == []
 

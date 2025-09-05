@@ -1,5 +1,5 @@
 import pytest
-from service import member_service
+from service import service_member
 
 
 # ==============================
@@ -41,7 +41,7 @@ def dummy_sheet():
 
 @pytest.fixture(autouse=True)
 def patch_get_member_sheet(monkeypatch, dummy_sheet):
-    monkeypatch.setattr(member_service, "get_member_sheet", lambda: dummy_sheet)
+    monkeypatch.setattr(service_member, "get_member_sheet", lambda: dummy_sheet)
     return dummy_sheet
 
 
@@ -50,19 +50,19 @@ def patch_get_member_sheet(monkeypatch, dummy_sheet):
 # ==============================
 def test_find_member_in_text_exact_match():
     text = "홍길동 노니 2개 카드 주문"
-    member = member_service.find_member_in_text(text)
+    member = service_member.find_member_in_text(text)
     assert member == "홍길동"
 
 
 def test_find_member_in_text_partial_name():
     text = "김철수님 홍삼 주문"
-    member = member_service.find_member_in_text(text)
+    member = service_member.find_member_in_text(text)
     assert member == "김철수"
 
 
 def test_find_member_in_text_none_found():
     text = "노니 2개 카드 주문"
-    member = member_service.find_member_in_text(text)
+    member = service_member.find_member_in_text(text)
     assert member is None
 
 
@@ -71,9 +71,9 @@ def test_find_member_in_text_longer_name_priority(dummy_sheet, monkeypatch):
     '김'과 '김철수'가 모두 후보일 때 → 긴 이름 '김철수' 우선
     """
     dummy_sheet.append_row(["김", "999999", "010-0000-0000"])
-    monkeypatch.setattr(member_service, "get_member_sheet", lambda: dummy_sheet)
+    monkeypatch.setattr(service_member, "get_member_sheet", lambda: dummy_sheet)
 
     text = "김철수 노니 주문"
-    member = member_service.find_member_in_text(text)
+    member = service_member.find_member_in_text(text)
     assert member == "김철수"
 

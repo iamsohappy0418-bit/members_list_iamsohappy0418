@@ -1,4 +1,4 @@
-# utils/openai_utils.py
+# utils/utils_openai.py
 import os
 import io
 import re

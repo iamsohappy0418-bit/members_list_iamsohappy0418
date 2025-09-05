@@ -1,11 +1,9 @@
-# utils/__init__.py
-
 # =====================================================
 # ✅ 공통 유틸 함수 모음 (전역에서 자주 쓰이는 함수만 export)
 # =====================================================
 
 # 날짜/시간 처리
-from .date_utils import (
+from .utils_date import (
     now_kst,
     process_order_date,
     parse_dt,
@@ -13,13 +11,13 @@ from .date_utils import (
 
 # 문자열 정리 (자연어 처리 중심)
 from .text_cleaner import (
-    clean_content,   # 핵심만 공개
-    clean_tail_command,   # ✅ 추가
-    clean_value_expression,  # ✅ 추가
+    clean_content,
+    clean_tail_command,
+    clean_value_expression,
 )
 
 # 문자열 유틸 (기본 처리)
-from .string_utils import (
+from .utils_string import (
     remove_josa,
     remove_spaces,
     split_to_parts,
@@ -44,37 +42,39 @@ from .sheets import (
 )
 
 # 메모 관련 기본 유틸
-from .memo_utils import (
+from .utils_memo import (
     get_memo_results,
     format_memo_results,
     filter_results_by_member,
-    handle_search_memo,   # ✅ 추가
-    
+    handle_search_memo,
 )
 
 # OpenAI 관련 (주문 파싱 등)
-from .openai_utils import (
-    extract_order_from_uploaded_image,   # ✅ 추가
-    parse_order_from_text,               # ✅ 같이 추가
+from .utils_openai import (
+    extract_order_from_uploaded_image,
+    parse_order_from_text,
 )
 
 # 검색 관련 유틸
-from .search_utils import (
+from .utils_search import (
     search_members,
     parse_natural_query,
 )
 
-
-
+# 회원 자연어 쿼리 파서 (member_query_parser → parser_query_member 로 통일)
+from .parser_query_member import (
+    infer_member_field,
+    parse_natural_query_multi,
+)
 
 __all__ = [
-    # date_utils
+    # utils_date
     "now_kst", "process_order_date", "parse_dt",
 
     # text_cleaner
-    "clean_content", "clean_tail_command", "clean_value_expression",  # ✅ 추가
+    "clean_content", "clean_tail_command", "clean_value_expression",
 
-    # string_utils
+    # utils_string
     "remove_josa", "remove_spaces", "split_to_parts",
     "is_match", "match_condition",
 
@@ -85,18 +85,16 @@ __all__ = [
     "get_activity_log_sheet", "get_commission_sheet",
     "append_row", "update_cell", "safe_update_cell", "delete_row",
 
-    # memo_utils
+    # utils_memo
     "get_memo_results", "format_memo_results", "filter_results_by_member",
-    "handle_search_memo",  # ✅ 추가
+    "handle_search_memo",
 
-    # openai_utils
+    # utils_openai
     "extract_order_from_uploaded_image", "parse_order_from_text",
 
-    # search_utils
+    # utils_search
     "search_members", "parse_natural_query",
 
-
+    # parser_query_member
+    "infer_member_field", "parse_natural_query_multi",
 ]
-
-
-

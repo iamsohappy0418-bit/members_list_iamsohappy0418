@@ -1,5 +1,5 @@
 import pytest
-from service import commission_service
+from service import service_commission
 
 
 # ==============================
@@ -40,8 +40,8 @@ def dummy_sheet():
 @pytest.fixture(autouse=True)
 def patch_sheets(monkeypatch, dummy_sheet):
     # get_commission_sheet / get_worksheet → dummy_sheet 반환
-    monkeypatch.setattr("service.commission_service.get_commission_sheet", lambda: dummy_sheet)
-    monkeypatch.setattr("service.commission_service.get_worksheet", lambda name: dummy_sheet)
+    monkeypatch.setattr("service.service_commission.get_commission_sheet", lambda: dummy_sheet)
+    monkeypatch.setattr("service.service_commission.get_worksheet", lambda name: dummy_sheet)
 
     # safe_update_cell을 DummySheet.rows에 직접 반영
     def fake_safe_update_cell(ws, r, c, v, clear_first=True):
@@ -51,7 +51,7 @@ def patch_sheets(monkeypatch, dummy_sheet):
             ws.rows[row_idx][col_idx] = v
         return True
 
-    monkeypatch.setattr("service.commission_service.safe_update_cell", fake_safe_update_cell)
+    monkeypatch.setattr("service.service_commission.safe_update_cell", fake_safe_update_cell)
     return dummy_sheet
 
 
@@ -61,10 +61,10 @@ def patch_sheets(monkeypatch, dummy_sheet):
 # ==============================
 def test_register_and_find_commission(dummy_sheet):
     data = {"지급일자": "2025-08-31", "회원명": "홍길동", "후원수당": "10000", "비고": "테스트"}
-    ok = commission_service.register_commission(data)
+    ok = service_commission.register_commission(data)
     assert ok is True
 
-    results = commission_service.find_commission({"회원명": "홍길동"})
+    results = service_commission.find_commission({"회원명": "홍길동"})
     assert len(results) == 1
     assert results[0]["회원명"] == "홍길동"
     assert results[0]["후원수당"] == "10000"
@@ -75,7 +75,7 @@ def test_update_commission(dummy_sheet):
     dummy_sheet.append_row(["2025-08-31", "홍길동", "10000", "테스트"])
 
     # 수정 실행
-    commission_service.update_commission("홍길동", "2025-08-31", {"후원수당": "20000"})
+    service_commission.update_commission("홍길동", "2025-08-31", {"후원수당": "20000"})
 
     records = dummy_sheet.get_all_records()
     assert records[0]["후원수당"] == "20000"
@@ -87,7 +87,7 @@ def test_delete_commission(dummy_sheet):
     dummy_sheet.append_row(["2025-08-31", "홍길동", "10000", "비고2"])
     dummy_sheet.append_row(["2025-08-31", "이태수", "8000", "비고3"])
 
-    result = commission_service.delete_commission("홍길동", 기준일자="2025-08-31")
+    result = service_commission.delete_commission("홍길동", 기준일자="2025-08-31")
     assert "삭제 완료" in result["message"]
 
     records = dummy_sheet.get_all_records()

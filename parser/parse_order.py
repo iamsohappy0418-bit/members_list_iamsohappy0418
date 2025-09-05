@@ -10,7 +10,7 @@ from utils import (
 )
 
 from config import MEMBERSLIST_API_URL
-from service.member_service import find_member_in_text
+from service.service_member import find_member_in_text
 
 
 

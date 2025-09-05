@@ -1,6 +1,6 @@
 import pytest
 import utils.sheets as sheets
-from service import memo_service
+from service import service_memo
 
 def test_save_memo(monkeypatch, dummy_sheet):
     monkeypatch.setattr(sheets, "get_counseling_sheet", lambda: dummy_sheet)
@@ -8,7 +8,7 @@ def test_save_memo(monkeypatch, dummy_sheet):
     # ✅ 헤더 먼저 세팅
     dummy_sheet.append_row(["날짜", "회원명", "내용"])
 
-    result = memo_service.save_memo("상담일지", "홍길동", "제품 상담 기록")
+    result = service_memo.save_memo("상담일지", "홍길동", "제품 상담 기록")
     assert result is True
     records = dummy_sheet.get_all_records()
     assert records[0]["회원명"] == "홍길동"
@@ -18,7 +18,7 @@ def test_save_memo(monkeypatch, dummy_sheet):
 
     dummy_sheet.headers = ["날짜", "회원명", "내용"]
 
-    result = memo_service.save_memo("상담일지", "홍길동", "제품 상담 기록")
+    result = service_memo.save_memo("상담일지", "홍길동", "제품 상담 기록")
     assert result is True
 
     # ✅ 저장된 값 직접 반영
@@ -31,7 +31,7 @@ def test_save_memo(monkeypatch, dummy_sheet):
 def test_save_memo(monkeypatch, dummy_sheet):
     monkeypatch.setattr(sheets, "get_counseling_sheet", lambda: dummy_sheet)
 
-    result = memo_service.save_memo("상담일지", "홍길동", "제품 상담 기록")
+    result = service_memo.save_memo("상담일지", "홍길동", "제품 상담 기록")
     assert result is True
 
     records = dummy_sheet.get_all_records()

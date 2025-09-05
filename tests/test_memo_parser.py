@@ -1,5 +1,5 @@
 import pytest
-from parser.memo_parser import parse_memo
+from parser.parser_memo import parse_memo
 
 
 # ==============================
@@ -28,7 +28,7 @@ def dummy_sheet():
 @pytest.fixture(autouse=True)
 def patch_get_worksheet(monkeypatch, dummy_sheet):
     # 상담일지 / 개인메모 / 활동일지 모두 같은 dummy_sheet 반환
-    monkeypatch.setattr("parser.memo_parser.get_worksheet", lambda name: dummy_sheet)
+    monkeypatch.setattr("parser.parser_memo.get_worksheet", lambda name: dummy_sheet)
     return dummy_sheet
 
 

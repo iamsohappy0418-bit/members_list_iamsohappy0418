@@ -9,7 +9,7 @@ from utils import (
 from parser.field_map import field_map
 
 
-from parser.member_parser import parse_conditions
+from parser.parser_member import parse_conditions
 
 
 
@@ -191,7 +191,7 @@ def register_member_internal(data: dict) -> bool:
     headers = sheet.row_values(1)
 
     # 데이터 전처리
-    from service.member_service import clean_member_data
+    from service.service_member import clean_member_data
     cleaned = clean_member_data(data)
 
     # header 순서에 맞게 값 채우기

@@ -30,8 +30,8 @@ def test_register_commission_api(client, monkeypatch):
             return [dict(zip(self.headers, r)) for r in self.rows]
 
     dummy_sheet = DummySheet()
-    monkeypatch.setattr("service.commission_service.get_worksheet", lambda name: dummy_sheet)
-    monkeypatch.setattr("service.commission_service.get_commission_sheet", lambda: dummy_sheet)
+    monkeypatch.setattr("service.service_commission.get_worksheet", lambda name: dummy_sheet)
+    monkeypatch.setattr("service.service_commission.get_commission_sheet", lambda: dummy_sheet)
 
     payload = {"지급일자": "2025-08-31", "회원명": "홍길동", "후원수당": "10000", "비고": "테스트"}
     resp = client.post("/register_commission", json=payload)
@@ -53,7 +53,7 @@ def test_find_commission_api(client, monkeypatch):
             return [dict(zip(self.headers, self.rows[0]))]
 
     dummy_sheet = DummySheet()
-    monkeypatch.setattr("service.commission_service.get_commission_sheet", lambda: dummy_sheet)
+    monkeypatch.setattr("service.service_commission.get_commission_sheet", lambda: dummy_sheet)
 
     payload = {"회원명": "홍길동"}
     resp = client.post("/find_commission", json=payload)
@@ -80,8 +80,8 @@ def test_update_commission_api(client, monkeypatch):
             return [self.headers] + self.rows
 
     dummy_sheet = DummySheet()
-    monkeypatch.setattr("service.commission_service.get_worksheet", lambda name: dummy_sheet)
-    monkeypatch.setattr("service.commission_service.safe_update_cell", lambda ws, r, c, v, clear_first=True: True)
+    monkeypatch.setattr("service.service_commission.get_worksheet", lambda name: dummy_sheet)
+    monkeypatch.setattr("service.service_commission.safe_update_cell", lambda ws, r, c, v, clear_first=True: True)
 
     payload = {
         "회원명": "홍길동",
@@ -114,7 +114,7 @@ def test_delete_commission_api(client, monkeypatch):
                 self.rows.pop(idx - 2)
 
     dummy_sheet = DummySheet()
-    monkeypatch.setattr("service.commission_service.get_commission_sheet", lambda: dummy_sheet)
+    monkeypatch.setattr("service.service_commission.get_commission_sheet", lambda: dummy_sheet)
 
     payload = {"회원명": "홍길동", "지급일자": "2025-08-31"}
     resp = client.post("/delete_commission", json=payload)

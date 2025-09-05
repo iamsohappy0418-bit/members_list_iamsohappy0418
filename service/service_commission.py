@@ -1,6 +1,6 @@
 from typing import List, Dict, Any
 from utils.sheets import get_commission_sheet, get_worksheet, safe_update_cell
-from parser.commission_parser import clean_commission_data
+from parser.parser_commission import clean_commission_data
 
 
 

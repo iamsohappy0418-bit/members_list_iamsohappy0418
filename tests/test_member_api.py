@@ -1,6 +1,6 @@
 import pytest
 from app import app
-from service import member_service
+from service import service_member
 
 
 # ==============================
@@ -41,9 +41,9 @@ def client():
 @pytest.fixture
 def dummy_sheet(monkeypatch):
     sheet = DummySheet()
-    monkeypatch.setattr(member_service, "get_member_sheet", lambda: sheet)
+    monkeypatch.setattr(service_member, "get_member_sheet", lambda: sheet)
     monkeypatch.setattr(
-        member_service,
+        service_member,
         "safe_update_cell",
         lambda ws, r, c, v, clear_first=True: ws.update_cell(r, c, v),
     )

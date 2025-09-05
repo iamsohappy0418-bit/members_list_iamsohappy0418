@@ -1,12 +1,12 @@
 import pytest
 import utils.sheets as sheets
-from service import order_service
+from service import service_order
 
 
 def test_register_order(dummy_sheet, monkeypatch):
     """제품 주문 등록 테스트"""
 
-    # ✅ order_service 내부에서 get_order_sheet() 호출 시 dummy_sheet 반환하도록 패치
+    # ✅ service_order 내부에서 get_order_sheet() 호출 시 dummy_sheet 반환하도록 패치
     monkeypatch.setattr(sheets, "get_order_sheet", lambda: dummy_sheet)
 
     # ✅ 헤더 세팅
@@ -22,7 +22,7 @@ def test_register_order(dummy_sheet, monkeypatch):
         "제품가격": "100000",
         "PV": "100"
     }
-    ok = order_service.register_order(order)
+    ok = service_order.register_order(order)
     assert ok is True
 
     # ✅ 시트에 저장된 값 검증

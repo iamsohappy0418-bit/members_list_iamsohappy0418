@@ -35,6 +35,7 @@ from utils import (
     get_memo_results, format_memo_results, filter_results_by_member,
     handle_search_memo,  # ✅ 추가
     search_members, parse_natural_query,
+    infer_member_field, parse_natural_query_multi,
 )
 
 # ===== project: utils (도메인 전용 → 직접 import) =====
@@ -46,8 +47,8 @@ from utils.sheets import (
     get_personal_memo_sheet,
     get_activity_log_sheet,
 )
-from utils.openai_utils import extract_order_from_uploaded_image, parse_order_from_text
-from utils.member_query_parser import infer_member_field, parse_natural_query_multi
+from utils.utils_openai import extract_order_from_uploaded_image, parse_order_from_text
+
 from utils.http import call_memberslist_add_orders, call_impact_sync
 
 # ===== parser =====
@@ -67,11 +68,11 @@ from parser.parse_order import (
     parse_order_from_text,
 )
 
-from parser.memo_parser import (
+from parser.parser_memo import (
     parse_request_line,
 )
 
-from parser.commission_parser import (
+from parser.parser_commission import (
     process_date,
     clean_commission_data,
 )
@@ -80,7 +81,7 @@ from parser.commission_parser import (
 from parser.field_map import field_map
 
 # ===== service =====
-from service.member_service import (
+from service.service_member import (
     find_member_internal,
     clean_member_data,
     register_member_internal,
@@ -90,7 +91,7 @@ from service.member_service import (
     process_member_query,
 )
 
-from service.order_service import (
+from service.service_order import (
     addOrders,
     handle_order_save,
     handle_product_order,
@@ -103,14 +104,14 @@ from service.order_service import (
     save_order_to_sheet,
 )
 
-from service.memo_service import (
+from service.service_memo import (
     save_memo,
     find_memo,
     search_in_sheet,
     search_memo_core,
 )
 
-from service.commission_service import (
+from service.service_commission import (
     find_commission,
     register_commission,
     update_commission,
@@ -200,8 +201,6 @@ def debug_sheets():
 
 
 
-<<<<<<< HEAD
-=======
 
 
 def guess_intent(text: str) -> str:
@@ -254,7 +253,6 @@ def guess_intent_entry():
 
 
 
->>>>>>> 7ddb26a0b3d2e3434692f07ebf049295782b3c6c
 
 # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 # ======================================================================================
@@ -339,9 +337,6 @@ def search_by_natural_language():
     limit = 20  # ✅ 기본 20건 유지
 
 
-<<<<<<< HEAD
-    
-=======
 
 
 
@@ -358,7 +353,6 @@ def search_member_by_natural_text():
     return jsonify(results)
 
 
->>>>>>> 7ddb26a0b3d2e3434692f07ebf049295782b3c6c
 
 
 # ======================================================================================
@@ -986,40 +980,7 @@ def memo_save_auto():
 
 
 
-# @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-# ======================================================================================
-# 자동 분기 메모 저장
-# ======================================================================================
-@app.route("/memo_save_auto", methods=["POST"])
-def memo_save_auto():
-    """
-    메모 저장 자동 분기 API
-    📌 설명:
-    - JSON 입력(일지종류, 회원명, 내용) → save_memo_route
-    - 자연어 입력(요청문) → add_counseling_route
-    📥 입력(JSON 예시1 - JSON 전용):
-    {
-      "일지종류": "상담일지",
-      "회원명": "홍길동",
-      "내용": "오늘은 제품설명회를 진행했습니다."
-    }
-    📥 입력(JSON 예시2 - 자연어 전용):
-    {
-      "요청문": "이태수 상담일지 저장 오늘부터 슬림바디 다시 시작"
-    }
-    """
-    data = request.get_json(silent=True) or {}
 
-    if "요청문" in data or "text" in data:
-        return add_counseling_route()
-    
-    if "일지종류" in data and "회원명" in data:
-        return save_memo_route()
-
-    return jsonify({
-        "status": "error",
-        "message": "❌ 입력이 올바르지 않습니다.\n자연어는 '요청문/text', JSON은 '일지종류/회원명/내용'을 포함해야 합니다."
-    }), 400
 
 
 
@@ -1123,32 +1084,10 @@ def add_counseling_route():
 
     except Exception as e:
         traceback.print_exc()
-<<<<<<< HEAD
-        return jsonify({"status": "error", "error": str(e)}), 500
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-=======
         return jsonify({
             "status": "error",
             "message": f"[서버 오류] {str(e)}"
         }), 500
->>>>>>> 7ddb26a0b3d2e3434692f07ebf049295782b3c6c
 
     
 
@@ -1325,7 +1264,6 @@ def search_memo_from_text():
     except Exception:
         pass
 
-<<<<<<< HEAD
     # ✅ 일지별 그룹핑 (출력 순서 고정)
     grouped = {"활동일지": [], "상담일지": [], "개인일지": []}
     for item in all_results:
@@ -1367,27 +1305,10 @@ def search_memo_from_text():
             "formatted_text": response_text,
             "has_more": any(len(v) > limit for v in grouped.values())
         }), 200
-=======
-    # ✅ format_memo_results 적용
-    formatted = format_memo_results(all_results)
-
-    # ✅ 최종 응답: text + lists 동시 제공
-    return jsonify({
-        "status": "success",
-        "text": formatted["text"],      # 사람이 읽기 좋은 전체 블록
-        "lists": formatted["lists"],    # 카테고리별 분리 정보
-        "keywords": keywords,
-        "member_name": member_name,
-        "sheets": sheet_names,
-        "search_mode": search_mode
-    }), 200
->>>>>>> 7ddb26a0b3d2e3434692f07ebf049295782b3c6c
 
 
 
 
-<<<<<<< HEAD
-=======
 
 
 
@@ -1406,7 +1327,6 @@ def search_memo_from_text():
 
 
 
->>>>>>> 7ddb26a0b3d2e3434692f07ebf049295782b3c6c
 # ======================================================================================
 # ✅ 메모(note: 상담일지/개인일지/활동일지) 저장
 # ======================================================================================
@@ -1717,7 +1637,6 @@ def commission_find_auto():
     """
     text = (request.get_json(silent=True) or {}).get("text", "").strip()
 
-<<<<<<< HEAD
     # ✅ 자연어 기반
     if "query" in data or "text" in data:
         return search_commission_by_nl()
@@ -1736,19 +1655,6 @@ def commission_find_auto():
                    "자연어는 'query/text/단일문자열', "
                    "JSON은 '회원명'을 포함해야 합니다."
     }), 400
-=======
-    # 단문 → 조회 (주문번호 같은 경우)
-    if re.fullmatch(r"\d{5,}", text):
-        return jsonify({"status": "success", "action": "find_order"})
-
-    if "저장" in text:
-        return jsonify({"status": "success", "action": "save_order"})
-    if any(k in text for k in ["조회", "검색", "찾아"]):
-        return jsonify({"status": "success", "action": "find_order"})
-
-    return jsonify({"status": "error", "message": "❌ 주문 요청 해석 불가"}), 400
-
->>>>>>> 7ddb26a0b3d2e3434692f07ebf049295782b3c6c
 
 
 
@@ -1813,35 +1719,7 @@ def search_commission_by_nl():
         return Response(f"[서버 오류] {str(e)}", status=500)
 
 
-<<<<<<< HEAD
-=======
-# ======================================================================================
-# ✅ 후원수당 조회 (자동 분기)
-# ======================================================================================
-@app.route("/commission_find_auto", methods=["POST"])
-def commission_find_auto():
-    text = (request.get_json(silent=True) or {}).get("text", "").strip()
 
-    # 단문 → 조회 (숫자 ID, 짧은 키워드 등)
-    if re.fullmatch(r"\d{5,}", text):
-        return jsonify({"status": "success", "action": "find_commission"})
-
-    if any(k in text for k in ["등록", "추가", "저장"]):
-        return jsonify({"status": "success", "action": "save_commission"})
-    if any(k in text for k in ["조회", "검색", "알려줘"]):
-        return jsonify({"status": "success", "action": "find_commission"})
-
-    return jsonify({"status": "error", "message": "❌ 후원수당 요청 해석 불가"}), 400
->>>>>>> 7ddb26a0b3d2e3434692f07ebf049295782b3c6c
-
-
-
-
-<<<<<<< HEAD
-=======
-
-
-# 잘됨
 
 
 
@@ -1860,6 +1738,12 @@ def debug_routes():
             "function_module": func.__module__
         })
     return jsonify(routes)
+
+
+
+
+
+
 
 
 @app.route("/debug_routes_table", methods=["GET"])
@@ -1966,7 +1850,6 @@ def debug_routes_table():
             writer.writerow(r)
         return Response(buf.getvalue(), mimetype="text/csv",
                         headers={"Content-Disposition": "attachment; filename=routes.csv"})
->>>>>>> 7ddb26a0b3d2e3434692f07ebf049295782b3c6c
 
     return Response(head + "\n".join(body) + tail, mimetype="text/html")
 

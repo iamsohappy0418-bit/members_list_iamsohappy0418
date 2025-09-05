@@ -1,4 +1,4 @@
-# utils/memo_utils.py
+# utils/utils_memo.py
 from datetime import datetime
 import logging
 
@@ -103,7 +103,7 @@ def filter_results_by_member(results, member_name):
 
 
 # 로거 설정
-logger = logging.getLogger("memo_utils")
+logger = logging.getLogger("utils_memo")
 logger.setLevel(logging.DEBUG)
 if not logger.handlers:  # 중복 등록 방지
     ch = logging.StreamHandler()
