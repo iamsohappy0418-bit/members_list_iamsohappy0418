@@ -260,6 +260,7 @@ def guess_intent_entry():
 # ======================================================================================
 # ✅ 회원 조회 자동 분기 API
 # ======================================================================================
+# ======================================================================================
 @app.route("/member_find_auto", methods=["POST"])
 def member_find_auto():
     """
@@ -267,9 +268,15 @@ def member_find_auto():
     📌 설명:
     - 자연어 기반 요청(text, query 포함) → search_by_natural_language
     - JSON 기반 요청(회원명, 회원번호 포함) → find_member
+    - "코드a", "코드 a" → search_member (코드 기반 검색)
     """
     data = request.get_json(silent=True) or {}
-    text = (data.get("text") or data.get("query") or "").strip()
+    text = (data.get("text") or data.get("query") or "").strip().lower()
+
+    # ✅ "코드a" / "코드 a" → search_member로 강제 분기
+    if text in ["코드a", "코드 a"] or text.startswith("코드"):
+        from service.service_member import searchMemberByNaturalText
+        return jsonify(searchMemberByNaturalText(text))
 
     # 단문 이름 → 회원 조회 실행
     if re.fullmatch(r"[가-힣]{2,4}", text):
@@ -391,6 +398,11 @@ def search_member_by_natural_text():
     sheet = get_member_sheet()
     results = search_members(sheet, conditions)
     return jsonify(results)
+
+
+
+
+
 
 
 
