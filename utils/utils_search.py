@@ -2,10 +2,13 @@ from datetime import datetime, timedelta
 import calendar
 import re
 
+from utils.sheets import get_rows_from_sheet
 
 # ------------------------------
 # 조건에 맞는 데이터 검색
 # ------------------------------
+from datetime import datetime
+
 from datetime import datetime
 
 def search_members(data, search_params):
@@ -13,6 +16,8 @@ def search_members(data, search_params):
     회원 검색 유틸
     - data: Worksheet 객체 또는 list(dict)
     - search_params: {"회원명": "이태수", "가입일자__gte": "2024-01-01"} 등
+    - 특수 규칙:
+        "코드a" 또는 "코드 a" → 무조건 코드 필드에서 A 검색
     """
 
     # ✅ Worksheet 객체일 경우 자동 변환
@@ -22,12 +27,29 @@ def search_members(data, search_params):
         rows = data
 
     results = []
-   
 
+    # ✅ 특수 처리: search_params 에서 "query" 키워드가 들어왔을 때
+    if "query" in search_params:
+        query = search_params["query"].strip().lower()
+
+        # "코드a" 또는 "코드 a" → 코드=A 검색
+        if query in ["코드a", "코드 a"]:
+            search_params = {"코드": "A"}
+
+        # "코드 + 알파벳" 패턴 자동 처리
+        elif query.startswith("코드"):
+            code_value = query.replace("코드", "").strip().upper()
+            if code_value:
+                search_params = {"코드": code_value}
+            else:
+                search_params = {}
+
+        else:
+            # query 가 "회원명" 검색어로 들어왔다고 가정
+            search_params = {"회원명": query}
+
+    # ✅ 실제 검색 수행
     for row in rows:
-
-       
-
         match = True
         for key, value in search_params.items():
 
@@ -68,8 +90,9 @@ def search_members(data, search_params):
         if match:
             results.append(row)
 
-    
     return results
+
+
 
 
 
@@ -164,4 +187,34 @@ def parse_natural_query(query: str):
    
     return {k: v for k, v in conditions.items() if k}
 
+
+
+
+
+def find_all_members_from_sheet(sheet_name: str, field: str, value: str):
+    """
+    특정 시트에서 필드 값으로 회원 전체 검색
+    """
+    results = []
+    rows = get_rows_from_sheet(sheet_name)
+
+    for row in rows:
+        if str(row.get(field, "")).strip().upper() == value.upper():
+            results.append(row)
+
+    return results
+
+
+def fallback_natural_search(query: str):
+    """
+    기본 자연어 검색 (회원명 기준 부분 검색)
+    """
+    rows = get_rows_from_sheet("DB")
+    results = []
+
+    for row in rows:
+        if query in row.get("회원명", "").lower():
+            results.append(row)
+
+    return results
 

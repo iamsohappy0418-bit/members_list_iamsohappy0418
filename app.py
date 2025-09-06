@@ -118,6 +118,7 @@ from service.service_commission import (
     delete_commission,
 )
 
+from service.service_member import searchMemberByNaturalText
 
 
 
@@ -394,6 +395,44 @@ def search_member_by_natural_text():
 
 
 
+@app.route("/search_member", methods=["GET", "POST"])
+def search_member():
+    """
+    회원 검색 API
+    - GET 방식: /search_member?query=코드a
+    - POST 방식: { "query": "코드a" } 또는 { "코드": "a" }
+    """
+    query = ""
+
+    if request.method == "POST":
+        body = request.get_json(silent=True) or {}
+        # JSON 안에서 "query" 또는 "코드" 키워드를 허용
+        query = body.get("query") or body.get("코드", "")
+    else:  # GET 요청
+        query = request.args.get("query", "").strip()
+
+    if not query:
+        return jsonify({"error": "검색어(query 또는 코드)를 입력하세요."}), 400
+
+    try:         
+        results = searchMemberByNaturalText(str(query))
+        return jsonify(results)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
 # ======================================================================================
 # ✅ 회원 수정
 # ======================================================================================
@@ -525,32 +564,43 @@ def save_member():
 def register_member_route():
     """
     회원 등록 API
-    📌 설명:
-    회원명, 회원번호, 휴대폰번호를 JSON으로 입력받아 신규 등록합니다.
-    📥 입력(JSON 예시):
-    {
-    "회원명": "홍길동",
-    "회원번호": "12345",
-    "휴대폰번호": "010-1111-2222"
-    }
+    - 요청문 형식: "회원등록 이판주 12345678 010-2759-9001"
+    - 또는 JSON 형식: {"회원명": "이판주", "회원번호": "12345678", "휴대폰번호": "010-2759-9001"}
     """
-
     try:
-        data = request.get_json()
-        name = data.get("회원명", "").strip()
-        number = data.get("회원번호", "").strip()
-        phone = data.get("휴대폰번호", "").strip()
+        data = request.get_json() or {}
+
+        # 1) 요청문 기반 파싱
+        요청문 = data.get("요청문", "").strip()
+        name, number, phone = "", "", ""
+
+        if 요청문:
+            parts = 요청문.split()
+            for part in parts:
+                if re.fullmatch(r"[가-힣]{2,4}", part):  # 이름
+                    name = part
+                elif re.fullmatch(r"\d{5,8}", part):   # 회원번호
+                    number = part
+                elif re.fullmatch(r"(010-\d{3,4}-\d{4}|\d{10,11})", part):  # 휴대폰
+                    phone = part
+
+        # 2) JSON 직접 입력 허용
+        name = data.get("회원명", name).strip()
+        number = data.get("회원번호", number).strip()
+        phone = data.get("휴대폰번호", phone).strip()
 
         if not name:
             return jsonify({"error": "회원명은 필수 입력 항목입니다."}), 400
 
-        register_member_internal(name, number, phone)
-        return jsonify({"message": f"{name}님이 성공적으로 등록되었습니다."}), 201
+        result = register_member_internal(name, number, phone)
+        return jsonify(result), 201
 
     except ValueError as ve:
         return jsonify({"error": str(ve)}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
 
     
 
@@ -561,22 +611,29 @@ def register_member_route():
 @app.route('/delete_member', methods=['POST'])
 def delete_member_route():
     """
-    회원 삭제 API
+    회원 전체 삭제 API
     📌 설명:
-    회원명을 기준으로 해당 회원의 전체 정보를 삭제합니다.
+    - 회원명을 기준으로 DB 시트에서 전체 행을 삭제합니다.
     📥 입력(JSON 예시):
     {
-    "회원명": "이판주"
+      "회원명": "홍길동"
     }
     """
-
     try:
-        name = request.get_json().get("회원명")
-        return delete_member_internal(name)
+        req = request.get_json(force=True)
+        name = (req.get("회원명") or "").strip()
+
+        if not name:
+            return jsonify({"error": "회원명은 필수 입력 항목입니다."}), 400
+
+        result, status = delete_member_internal(name)
+        return jsonify(result), status
+
     except Exception as e:
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
 
 
 
@@ -588,45 +645,33 @@ def delete_member_route():
 @app.route('/delete_member_field_nl', methods=['POST'])
 def delete_member_field_nl():
     """
-    회원 필드 삭제 API
+    회원 필드 삭제 API (자연어 기반)
     📌 설명:
-    자연어 문장에서 특정 필드를 추출하여 해당 회원의 필드를 비웁니다.
+    - 자연어 문장에서 특정 필드를 추출하여 해당 회원의 일부 필드를 삭제합니다.
+    - '회원명', '회원번호'는 삭제 불가 (삭제 요청 자체를 막음)
+    - '홍길동 삭제' → 전체 삭제 방지 (별도 API /delete_member 사용)
+
     📥 입력(JSON 예시):
     {
-    "요청문": "이판여 휴대폰번호 삭제"
+      "요청문": "이판여 주소랑 휴대폰번호 삭제"
     }
     """
-
     try:
         req = request.get_json(force=True)
-        text = req.get("요청문", "").strip()
+        text = (req.get("요청문") or "").strip()
 
         if not text:
             return jsonify({"error": "요청문을 입력해야 합니다."}), 400
 
-        # 삭제 키워드 체크
-        delete_keywords = ["삭제", "삭제해줘", "비워", "비워줘", "초기화", "초기화줘", "없애", "없애줘", "지워", "지워줘"]
-        parts = split_to_parts(text)
-        has_delete_kw = any(remove_spaces(dk) in [remove_spaces(p) for p in parts] for dk in delete_keywords)
-        all_field_keywords = list(chain.from_iterable(field_map.values()))
-        has_field_kw = any(remove_spaces(fk) in [remove_spaces(p) for p in parts] for fk in all_field_keywords)
-
-        if not (has_delete_kw and has_field_kw):
-            return jsonify({"error": "삭제 명령이 아니거나 필드명이 포함되지 않았습니다."}), 400
-
-        # 매칭된 필드 추출
-        matched_fields = []
-        for field, keywords in sorted(field_map.items(), key=lambda x: -max(len(k) for k in x[1])):
-            for kw in keywords:
-                if remove_spaces(kw) in [remove_spaces(p) for p in parts] and field not in matched_fields:
-                    matched_fields.append(field)
-
-        return delete_member_field_nl_internal(text, matched_fields)
+        result, status = delete_member_field_nl_internal(text)
+        return jsonify(result), status
 
     except Exception as e:
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
+
 
 
 # ======================================================================================

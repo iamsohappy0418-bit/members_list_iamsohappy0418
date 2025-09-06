@@ -68,9 +68,16 @@ def update_cell(sheet_name: str, row: int, col: int, value, clear_first=True):
     ws.update_cell(row, col, value)
 
 
-def delete_row(sheet_name: str, row: int):
-    ws = get_worksheet(sheet_name)
+def delete_row(sheet_or_name, row: int):
+    """
+    워크시트 이름(str) 또는 Worksheet 객체를 받아서 행 삭제
+    """
+    if isinstance(sheet_or_name, str):
+        ws = get_worksheet(sheet_or_name)
+    else:
+        ws = sheet_or_name
     ws.delete_rows(row)
+
 
 
 def safe_update_cell(sheet, row, col, value, clear_first=True, max_retries=3, delay=2):
@@ -168,3 +175,20 @@ def get_member_info(member_name: str):
 def get_sheet():
     """스프레드시트 핸들 반환 (전역 spreadsheet 객체)"""
     return spreadsheet
+
+
+
+def get_rows_from_sheet(sheet_name: str):
+    """
+    DB 시트에서 모든 행 불러오기
+    실제 구현은 Google Sheets API (gspread 등) 연결 필요
+    """
+    # 🔧 TODO: Google Sheets API 연동
+    # 예시 데이터
+    return [
+        {"회원명": "이태수", "회원번호": "22366", "코드": "A", "휴대폰번호": "010-2759-9001"},
+        {"회원명": "김선영", "회원번호": "36739440", "코드": "A", "휴대폰번호": ""},
+        {"회원명": "박지현", "회원번호": "12345", "코드": "B", "휴대폰번호": "010-1111-2222"},
+    ]
+
+
