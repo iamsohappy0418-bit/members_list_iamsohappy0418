@@ -22,11 +22,20 @@ def search_members(data, search_params):
         rows = data
 
     results = []
+   
+
     for row in rows:
+
+       
+
         match = True
         for key, value in search_params.items():
+
+            if not key:   # ✅ key가 None이면 스킵
+                continue            
+
             field = key.split("__")[0]
-            field_value = str(row.get(field, ""))
+            field_value = str(row.get(field, "")).strip()  # ✅ 공백 제거
 
             # 날짜 비교 (__gte, __lte)
             if "__gte" in key or "__lte" in key:
@@ -44,16 +53,16 @@ def search_members(data, search_params):
                     match = False
                     break
             else:
-                # 일반 문자열 비교 (부분 일치, 대소문자 무시)
-                if value.lower() not in field_value.lower():
+                # 일반 문자열 비교 (부분 일치 허용)
+                if value.strip().lower() not in field_value.lower():
                     match = False
                     break
 
         if match:
             results.append(row)
 
+    
     return results
-
 
 
 
@@ -64,6 +73,14 @@ def search_members(data, search_params):
 def parse_natural_query(query: str):
     conditions = {}
     today = datetime.today()
+
+    # ✅ 회원명 / 휴대폰 / 회원번호 직접 검색
+    if re.fullmatch(r"[가-힣]{2,4}", query):
+        conditions["회원명"] = query
+    if re.fullmatch(r"\d{3}-\d{3,4}-\d{4}", query):
+        conditions["휴대폰번호"] = query
+    if re.fullmatch(r"\d{5,}", query):
+        conditions["회원번호"] = query
 
     # 상대적 날짜
     if "오늘" in query:
@@ -110,7 +127,18 @@ def parse_natural_query(query: str):
         conditions["가입일__gte"] = start_date.strftime("%Y-%m-%d")
         conditions["가입일__lte"] = today.strftime("%Y-%m-%d")
 
-    # 절대 날짜
+    # ✅ 최근 N년 (추가)
+    match = re.search(r"최근\s*(\d+)\s*년", query)
+    if match:
+        years = int(match.group(1))
+        start_date = today.replace(year=today.year - years)
+        conditions["가입일__gte"] = start_date.strftime("%Y-%m-%d")
+        conditions["가입일__lte"] = today.strftime("%Y-%m-%d")
+
+
+
+
+    # 절대 날짜 (YYYY-MM-DD)
     date_pattern = r"(\d{4}-\d{2}-\d{2})"
 
     match = re.search(r"(가입일|생년월일).*" + date_pattern + r".*이후", query)
@@ -126,6 +154,7 @@ def parse_natural_query(query: str):
         field, date_val = match.group(1), match.group(2)
         conditions[field] = date_val
 
-    return conditions
+   
+    return {k: v for k, v in conditions.items() if k}
 
 

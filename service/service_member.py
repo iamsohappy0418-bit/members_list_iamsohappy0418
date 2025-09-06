@@ -123,30 +123,43 @@ def find_member_in_text(text: str) -> str | None:
 
 
 def find_member_internal(name: str = "", number: str = "") -> list[dict]:
+    """
+    회원명/회원번호 기반 단순 검색
+    - name: 부분일치 허용 (소문자 비교)
+    - number: 정확히 일치 (회원번호)
+    """
     sheet = get_member_sheet()
     records = sheet.get_all_records()
 
     results = []
+    seen = set()  # ✅ 중복 제거용
+
     name = (name or "").strip().lower()
     number = (number or "").strip()
 
-    print(f"[DEBUG] 찾는 회원명: '{name}', 회원번호: '{number}'")
+   
 
     for row in records:
         member_name = str(row.get("회원명", "")).strip().lower()
         member_number = str(row.get("회원번호", "")).strip()
-        print(f"[DEBUG] 비교 대상 회원명: '{member_name}', 회원번호: '{member_number}'")
+       
+
+        matched = False
 
         if name and name in member_name:
-            print(f"[MATCH] 이름 매칭됨 → {row}")
-            results.append(row)
-            continue
+            matched = True
+        elif number and number == member_number:
+            matched = True
 
-        if number and number == member_number:
-            print(f"[MATCH] 번호 매칭됨 → {row}")
-            results.append(row)
+        if matched:
+            key = f"{member_name}:{member_number}"
+            if key not in seen:   # ✅ 중복 방지
+                print(f"[MATCH] 매칭됨 → {row}")
+                results.append(row)
+                seen.add(key)
 
     return results
+
 
 
 

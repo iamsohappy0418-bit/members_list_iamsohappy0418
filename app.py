@@ -257,7 +257,7 @@ def guess_intent_entry():
 
 # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 # ======================================================================================
-# ✅ 회원 조회 (자동 분기)
+# ✅ 회원 조회 자동 분기 API
 # ======================================================================================
 @app.route("/member_find_auto", methods=["POST"])
 def member_find_auto():
@@ -268,14 +268,15 @@ def member_find_auto():
     - JSON 기반 요청(회원명, 회원번호 포함) → find_member
     """
     data = request.get_json(silent=True) or {}
-    text = data.get("text", "").strip()
+    text = (data.get("text") or data.get("query") or "").strip()
 
-    # 단문 패턴 → 무조건 조회
-    if re.fullmatch(r"코드\s*[A-Za-z0-9]+", text) \
-       or re.fullmatch(r"[가-힣]{2,4}", text) \
-       or re.fullmatch(r"\d{3}-\d{3,4}-\d{4}", text) \
-       or re.fullmatch(r"\d{5,}", text):
-        return find_member()   # ✅ 실제 함수 실행
+    # 단문 이름 → 회원 조회 실행
+    if re.fullmatch(r"[가-힣]{2,4}", text):
+        return jsonify(find_member_internal(name=text))
+
+    # 회원번호 숫자 → 회원 조회 실행
+    if re.fullmatch(r"\d{5,}", text):
+        return jsonify(find_member_internal(number=text))
 
     # 키워드 기반 분기
     if any(k in text for k in ["등록", "추가"]):
@@ -285,9 +286,9 @@ def member_find_auto():
     if any(k in text for k in ["삭제", "지워", "제거"]):
         return jsonify({"status": "success", "action": "delete_member"})
     if any(k in text for k in ["조회", "찾아", "검색", "알려줘"]):
-        return find_member()   # ✅ 실제 함수 실행
+        return jsonify(find_member_internal(name=text))   # ❌ dict → ✅ name
 
-    # 기본은 자연어 검색
+    # 기본 → 자연어 기반 검색 실행
     return search_by_natural_language()
 
 
@@ -307,14 +308,14 @@ def find_member():
       "회원명": "신금자"
     }
     """
+    data = request.get_json() or {}
 
+    # text 필드 허용 → 회원명으로 변환
+    name = data.get("회원명") or data.get("text", "")
+    number = data.get("회원번호", "")
 
-    search_params = request.get_json() or {}
-    sheet = get_member_sheet()                 # Worksheet
-    results = search_members(sheet, search_params)   # ✅ Worksheet도 처리 가능
-    return jsonify(results)
+    return jsonify(find_member_internal(name=name, number=number))
 
-    
 
 
 # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
@@ -328,12 +329,12 @@ def search_by_natural_language():
     📌 설명:
     - 자연어 문장에서 (필드, 키워드) 조건들을 추출하여 DB 시트에서 회원 검색
     - 조건 여러 개 입력 시 AND 검색
-    - 기본은 텍스트 리스트 출력 (회원명, 회원번호, 휴대폰번호, 특수번호, 코드만 표시)
+    - 기본은 텍스트 리스트 출력 (회원명, 회원번호, 휴대폰번호, 코드만 표시)
     - {"detail": true} 옵션 → JSON 상세 응답
     - 기본 20건(limit), offset으로 페이지네이션
     """
     data = request.get_json() or {}
-    query = (data.get("query") or "").strip()
+    query = (data.get("query") or data.get("text") or "").strip()
     detail = bool(data.get("detail", False))
     offset = int(data.get("offset", 0))
     limit = 20
@@ -341,26 +342,44 @@ def search_by_natural_language():
     if not query:
         return jsonify({"error": "검색어(query)가 필요합니다."}), 400
 
+    # ✅ 조건 추출
     conditions = parse_natural_query(query)
+
+    # ✅ tuple/list → dict 변환 방어 코드
+    if isinstance(conditions, tuple) and len(conditions) == 2:
+        conditions = {conditions[0]: conditions[1]}
+    elif isinstance(conditions, list):
+        try:
+            conditions = {k: v for k, v in conditions}
+        except Exception:
+            conditions = {}
+
+    if not isinstance(conditions, dict):
+        return jsonify({"error": "조건 파싱 실패"}), 400
+
+    # ✅ 회원명 직접 입력일 경우
+    if not conditions and re.fullmatch(r"[가-힣]{2,4}", query):
+        conditions = {"회원명": query}
+
     sheet = get_member_sheet()
     results = search_members(sheet, conditions)
 
     if not detail:
-        # 요약 응답 (회원명, 회원번호, 휴대폰번호, 코드만)
         simplified = [
             {k: row.get(k) for k in ["회원명", "회원번호", "휴대폰번호", "코드"]}
             for row in results
         ]
         return jsonify(simplified[offset:offset+limit])
 
-    # 상세 응답
     return jsonify(results[offset:offset+limit])
 
 
 
 
 
-
+# ======================================================================================
+# ✅ GET 방식 자연어 검색 (테스트용)
+# ======================================================================================
 @app.route("/searchMemberByNaturalText", methods=["GET"])
 def search_member_by_natural_text():
     query = request.args.get("query", "").strip()
