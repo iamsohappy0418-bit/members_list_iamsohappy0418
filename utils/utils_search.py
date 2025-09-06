@@ -52,11 +52,18 @@ def search_members(data, search_params):
                 if "__lte" in key and field_date > search_date:
                     match = False
                     break
+                
             else:
-                # 일반 문자열 비교 (부분 일치 허용)
-                if value.strip().lower() not in field_value.lower():
-                    match = False
-                    break
+                # ✅ 코드/회원번호는 반드시 정확히 일치 (대소문자 무시)
+                if field in ["코드", "회원번호"]:
+                    if field_value.lower() != value.strip().lower():
+                        match = False
+                        break
+                else:
+                    # 일반 문자열 비교 (부분 일치 허용, 대소문자 무시)
+                    if value.strip().lower() not in field_value.lower():
+                        match = False
+                        break
 
         if match:
             results.append(row)
