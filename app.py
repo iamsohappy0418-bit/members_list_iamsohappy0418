@@ -454,41 +454,65 @@ def api_search_member():
 @app.route("/search_by_code", methods=["GET", "POST"])
 def search_by_code():
     """
-    코드 기반 회원 검색 API
+    코드 기반 회원 검색 API (고정 문자열 출력)
     - GET 방식: /search_by_code?query=코드a
     - POST 방식: { "query": "코드a" }
     """
-    if request.method == "POST":
-        body = request.get_json(silent=True) or {}
-        query = body.get("query", "").strip().lower()
-    else:
-        query = (request.args.get("query") or "").strip().lower()
-
-    if not query:
-        return jsonify({"error": "검색어(query)를 입력하세요."}), 400
-
-    code_value = ""
-    if query in ["코드a", "코드 a"]:
-        code_value = "A"
-    elif query.startswith("코드"):
-        code_value = query.replace("코드", "").strip().upper()
-
-    if not code_value:
-        return jsonify({"error": "올바른 코드 검색어가 아닙니다. 예: 코드a"}), 400
-
     try:
-        rows = get_rows_from_sheet("DB")  # ✅ utils.sheets 함수 사용
-        results = [row for row in rows if str(row.get("코드", "")).strip().upper() == code_value]
+        # 1. 입력값 받기
+        if request.method == "POST":
+            body = request.get_json(silent=True) or {}
+            query = (body.get("query") or "").strip().lower()
+        else:
+            query = (request.args.get("query") or "").strip().lower()
+
+        if not query:
+            return jsonify({"error": "검색어(query)를 입력하세요."}), 400
+
+        # 2. 코드 추출
+        code_value = ""
+        if query in ["코드a", "코드 a"]:
+            code_value = "A"
+        elif query.startswith("코드"):
+            code_value = query.replace("코드", "").strip().upper()
+
+        if not code_value:
+            return jsonify({"error": "올바른 코드 검색어가 아닙니다. 예: 코드a"}), 400
+
+        # 3. DB 시트 조회
+        rows = get_rows_from_sheet("DB")
+        results = [
+            row for row in rows
+            if str(row.get("코드", "")).strip().upper() == code_value
+        ]
+
+        # 4. 고정 포맷 문자열 변환
+        formatted_results = []
+        for r in results:
+            member_name = str(r.get("회원명", "")).strip()
+            member_number = str(r.get("회원번호", "")).strip()
+            special_number = str(r.get("특수번호", "")).strip()
+            phone = str(r.get("휴대폰번호", "")).strip()
+
+            formatted = (
+                f"{member_name} "
+                f"(회원번호: {member_number}, 특수번호: {special_number}, 휴대폰: {phone})"
+            )
+            formatted_results.append(formatted)
 
         return jsonify({
             "status": "success",
             "query": query,
             "code": code_value,
             "count": len(results),
-            "results": results
-        })
+            "results": formatted_results
+        }), 200
+
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 
 
