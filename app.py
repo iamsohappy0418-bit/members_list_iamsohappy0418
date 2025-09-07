@@ -565,8 +565,13 @@ def api_search_member():
 def search_by_code():
     """
     코드 기반 회원 검색 API (항상 리스트 형식 출력)
-    - GET 방식: /search_by_code?query=코드a
-    - POST 방식: { "query": "코드a" }
+    - GET:  /search_by_code?query=코드a
+    - POST: { "query": "코드a" }
+
+    허용 입력: 코드a, 코드 A, 코드: a, 코드 :A
+    결과: code_value = A (영문 대문자)
+    DB 조회: 코드 필드 정확히 일치 (대소문자 무시)
+    반환: 회원명 기준 오름차순 정렬
     """
     try:
         # 1. 입력값 받기
@@ -579,24 +584,24 @@ def search_by_code():
         if not query:
             return jsonify({"error": "검색어(query)를 입력하세요."}), 400
 
-        # 2. 코드 추출
-        code_value = ""
-        if query in ["코드a", "코드 a"]:
-            code_value = "A"
-        elif query.startswith("코드"):
-            code_value = query.replace("코드", "").strip().upper()
+        # 2. "코드" 뒤의 콜론(:, ：) 및 공백 제거
+        query = re.sub(r"코드\s*[:：]?\s*", "코드", query, flags=re.IGNORECASE)
 
-        if not code_value:
+        # 3. 코드값 정규화 (영문 알파벳만 허용)
+        match = re.match(r"코드([a-z])$", query, re.IGNORECASE)
+        if not match:
             return jsonify({"error": "올바른 코드 검색어가 아닙니다. 예: 코드a"}), 400
 
-        # 3. DB 시트 조회
+        code_value = match.group(1).upper()  # 항상 대문자로 변환
+
+        # 4. DB 시트 조회 (코드 필드 정확히 일치, 대소문자 무시)
         rows = get_rows_from_sheet("DB")
         results = [
             row for row in rows
             if str(row.get("코드", "")).strip().upper() == code_value
         ]
 
-        # 4. 고정 포맷 문자열 변환 (항상 리스트로 반환)
+        # 5. 결과 포맷 변환
         formatted_results = []
         for r in results:
             member_name = str(r.get("회원명", "")).strip()
@@ -613,19 +618,23 @@ def search_by_code():
                 parts.append(f"휴대폰: {phone}")
 
             formatted = f"{member_name} ({', '.join(parts)})" if parts else member_name
-            formatted_results.append(formatted)
+            formatted_results.append((member_name, formatted))
+
+        # 6. 회원명 기준 오름차순 정렬
+        formatted_results.sort(key=lambda x: x[0])
 
         return jsonify({
             "status": "success",
             "query": query,
             "code": code_value,
             "count": len(formatted_results),
-            "results": formatted_results  # ✅ 항상 리스트
+            "results": [f for _, f in formatted_results]
         }), 200
 
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 
 
