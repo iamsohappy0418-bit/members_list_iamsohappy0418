@@ -623,18 +623,28 @@ def search_by_code():
         # 6. 회원명 기준 오름차순 정렬
         formatted_results.sort(key=lambda x: x[0])
 
-        return jsonify({
-            "status": "success",
-            "query": query,
-            "code": code_value,
-            "count": len(formatted_results),
-            "results": [f for _, f in formatted_results]
-        }), 200
-
+        # ✅ jsonify 대신 app.response_class 사용 + ensure_ascii=False
+        return app.response_class(
+            response=json.dumps({
+                "status": "success",
+                "query": query,
+                "code": code_value,
+                "count": len(formatted_results),
+                "results": [f for _, f in formatted_results]
+            }, ensure_ascii=False),   # ✅ 한글 깨짐 방지
+            status=200,
+            mimetype="application/json"
+        )
+    
     except Exception as e:
         import traceback; traceback.print_exc()
-        return jsonify({"status": "error", "message": str(e)}), 500
-
+        return app.response_class(
+            response=json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False),
+            status=500,
+            mimetype="application/json"
+        )
+    
+    
 
 
 
