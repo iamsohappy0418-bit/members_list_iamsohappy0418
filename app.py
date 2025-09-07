@@ -577,9 +577,9 @@ def search_by_code():
         # 1. 입력값 받기
         if request.method == "POST":
             body = request.get_json(silent=True) or {}
-            query = (body.get("query") or "").strip().lower()
+            query = (body.get("query") or "").strip()   # ✅ .lower() 제거
         else:
-            query = (request.args.get("query") or "").strip().lower()
+            query = (request.args.get("query") or "").strip()   # ✅ .lower() 제거
 
         if not query:
             return jsonify({"error": "검색어(query)를 입력하세요."}), 400
@@ -587,8 +587,8 @@ def search_by_code():
         # 2. "코드" 뒤의 콜론(:, ：) 및 공백 제거
         query = re.sub(r"코드\s*[:：]?\s*", "코드", query, flags=re.IGNORECASE)
 
-        # 3. 코드값 정규화 (영문 알파벳만 허용)
-        match = re.match(r"코드([a-z])$", query, re.IGNORECASE)
+        # 3. 코드값 정규화 (영문 알파벳만 허용, 뒤 공백 허용)
+        match = re.match(r"코드([a-z])\s*$", query, re.IGNORECASE)  # ✅ 공백 허용
         if not match:
             return jsonify({"error": "올바른 코드 검색어가 아닙니다. 예: 코드a"}), 400
 
@@ -634,7 +634,6 @@ def search_by_code():
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
-
 
 
 
