@@ -454,7 +454,7 @@ def api_search_member():
 @app.route("/search_by_code", methods=["GET", "POST"])
 def search_by_code():
     """
-    코드 기반 회원 검색 API (리스트 형식 + 조건부 출력)
+    코드 기반 회원 검색 API (고정 문자열 리스트 출력)
     - GET 방식: /search_by_code?query=코드a
     - POST 방식: { "query": "코드a" }
     """
@@ -486,15 +486,15 @@ def search_by_code():
             if str(row.get("코드", "")).strip().upper() == code_value
         ]
 
-        # 4. 포맷 변환 (필드가 있으면만 출력)
+        # 4. 고정 포맷 문자열 변환 (회원명만 있어도 출력)
         formatted_results = []
         for r in results:
-            parts = []
             member_name = str(r.get("회원명", "")).strip()
             member_number = str(r.get("회원번호", "")).strip()
             special_number = str(r.get("특수번호", "")).strip()
             phone = str(r.get("휴대폰번호", "")).strip()
 
+            parts = []
             if member_number:
                 parts.append(f"회원번호: {member_number}")
             if special_number:
@@ -502,6 +502,7 @@ def search_by_code():
             if phone:
                 parts.append(f"휴대폰: {phone}")
 
+            # ✅ parts가 비어 있어도 회원명만 출력되도록 보장
             formatted = f"{member_name} ({', '.join(parts)})" if parts else member_name
             formatted_results.append(formatted)
 
@@ -517,6 +518,7 @@ def search_by_code():
         import traceback
         traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 
 
