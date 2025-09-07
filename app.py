@@ -211,13 +211,17 @@ def debug_sheets():
         }), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-# =============================================================
-# =============================================================
-# =============================================================
-# =============================================================
-# =============================================================
-# =============================================================
+    
 
+
+
+
+# ======================================================================================
+# ======================================================================================
+# ======================================================================================
+# ======================================================================================
+# ======================================================================================
+# ======================================================================================
 
 def guess_intent(text: str) -> str:
     """
@@ -254,13 +258,10 @@ def guess_intent(text: str) -> str:
     return "unknown"
 
 
-
-
-
-# =============================================================
-# =============================================================
-# =============================================================
-# =============================================================
+# ======================================================================================
+# ======================================================================================
+# ======================================================================================
+# ======================================================================================
 
 @app.before_request
 def preprocess_input():
@@ -279,18 +280,19 @@ def preprocess_input():
     elif request.method == "GET":
         data = request.args.to_dict()
 
-    raw_text = data.get("text", "").strip() if "text" in data else None
+    raw_text = None
     query, intent = None, None
 
-    # ✅ PC 입력
+    # ✅ PC 입력 (query 직접 전달)
     if "query" in data:
-        query = data["query"]
+        query = (data.get("query") or "").strip()
         raw_text = query
-        parsed = nlu_to_pc_input(raw_text)
-        intent = parsed.get("intent")
+        # PC 입력은 그대로 사용 → intent는 None
+        intent = None
 
-    # ✅ 자연어 입력
-    elif raw_text:
+    # ✅ 자연어 입력 (NLU 처리)
+    elif "text" in data and data["text"].strip():
+        raw_text = data["text"].strip()
         parsed = nlu_to_pc_input(raw_text)
         query = parsed.get("query")
         intent = parsed.get("intent")
@@ -301,11 +303,27 @@ def preprocess_input():
         "raw_text": raw_text
     }
 
+# ======================================================================================
+# ======================================================================================
+# ======================================================================================
+# ======================================================================================
 
+def normalize_code_query(text: str) -> str:
+    """
+    코드 검색용 query 정규화
+    - 코드a, 코드 A, 코드: b, 코드 :C, 코드aa → 코드A, 코드B, 코드C, 코드AA
+    """
+    if not text:
+        return ""
+    match = re.search(r"코드\s*[:：]?\s*([a-zA-Z]+)", text, re.IGNORECASE)
+    if match:
+        return f"코드{match.group(1).upper()}"
+    return text.strip()
 
-
-# ==================================================
-# ==================================================
+# ======================================================================================
+# ======================================================================================
+# ======================================================================================
+# ======================================================================================
 
 def nlu_to_pc_input(text: str) -> dict:
     """
@@ -314,34 +332,45 @@ def nlu_to_pc_input(text: str) -> dict:
     """
     text = (text or "").strip()
 
-    # ✅ 코드 검색 (코드a, 코드 b ...)
-    match = re.search(r"코드\s*([a-zA-Z])", text, re.IGNORECASE)
-    if match:
-        return {"query": f"코드{match.group(1).upper()}", "intent": "search_by_code"}
+    # ✅ 코드 검색 (코드a, 코드 b, 코드aa, 코드ABC ...)
+    normalized = normalize_code_query(text)
+    if normalized.startswith("코드"):
+        return {"query": normalized, "intent": "search_member"}
 
     # ✅ 회원명 검색 ("홍길동 회원", "회원 홍길동")
     match = re.search(r"([가-힣]{2,4})\s*회원", text)
     if match:
-        return {"query": f"{{ 회원명: '{match.group(1)}' }}", "intent": "find_member"}
+        return {"query": f"{{ 회원명: '{match.group(1)}' }}", "intent": "search_member"}
 
     # ✅ 회원번호 (숫자 5~8자리)
     match = re.fullmatch(r"\d{5,8}", text)
     if match:
-        return {"query": f"{{ 회원번호: '{match.group(0)}' }}", "intent": "find_member"}
+        return {"query": f"{{ 회원번호: '{match.group(0)}' }}", "intent": "search_member"}
 
     # ✅ 휴대폰번호 (010으로 시작, 10~11자리 / 하이픈 허용)
     match = re.fullmatch(r"(010-\d{3,4}-\d{4}|010\d{7,8})", text)
     if match:
-        return {"query": f"{{ 휴대폰번호: '{match.group(0)}' }}", "intent": "find_member"}
+        return {"query": f"{{ 휴대폰번호: '{match.group(0)}' }}", "intent": "search_member"}
 
     # ✅ 특수번호 검색 ("특수번호 77")
     match = re.search(r"특수번호\s*([a-zA-Z0-9!@#]+)", text)
     if match:
-        return {"query": f"{{ 특수번호: '{match.group(1)}' }}", "intent": "find_member"}
+        return {"query": f"{{ 특수번호: '{match.group(1)}' }}", "intent": "search_member"}
 
     # ✅ 단순 이름 입력 ("홍길동")
     if re.fullmatch(r"[가-힣]{2,4}", text):
-        return {"query": f"{{ 회원명: '{text}' }}", "intent": "find_member"}
+        return {"query": f"{{ 회원명: '{text}' }}", "intent": "search_member"}
+
+    # ✅ 회원 등록 ("회원등록 홍길동 12345678 010-1234-5678")
+    if text.startswith("회원등록"):
+        return {"query": text, "intent": "register_member"}
+
+    # ✅ 회원 삭제 ("홍길동 삭제", "회원 홍길동 삭제")
+    if "삭제" in text:
+        match = re.search(r"([가-힣]{2,4}).*삭제", text)
+        if match:
+            return {"query": {"회원명": match.group(1)}, "intent": "delete_member"}
+        return {"query": text, "intent": "delete_member"}
 
     # ✅ 주문 ("홍길동 주문", "제품 주문")
     if "주문" in text:
@@ -362,9 +391,10 @@ def nlu_to_pc_input(text: str) -> dict:
     return {"query": text, "intent": "unknown"}
 
 
-
-# ==================================================
-# ==================================================
+# ======================================================================================
+# ======================================================================================
+# ======================================================================================
+# ======================================================================================
 
 @app.route("/guess_intent", methods=["POST"])
 def guess_intent_entry():
@@ -383,12 +413,15 @@ def guess_intent_entry():
 
     # intent → 엔드포인트 매핑
     intent_map = {
+
+
+        "search_member": "/search_member",
         "register_member": "/register_member",
-        "find_member": "/find_member",
+        "delete_member": "/delete_member",
         "order_find_auto": "/order_find_auto",
         "memo_find_auto": "/memo_find_auto",
         "commission_find_auto": "/commission_find_auto",
-        "search_by_code": "/search_by_code",
+
     }
 
     if intent in intent_map:
@@ -399,16 +432,10 @@ def guess_intent_entry():
         "message": f"❌ 처리할 수 없는 요청입니다. (intent={intent})"
     }), 400
 
-
-
-# ==================================================
-# ==================================================
-
-
-
-
-
-
+# ======================================================================================
+# ======================================================================================
+# ======================================================================================
+# ======================================================================================
 
 # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 # ======================================================================================
@@ -416,30 +443,118 @@ def guess_intent_entry():
 # ======================================================================================
 # ======================================================================================
 
-
-
-
-
-
-
-
 # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-# ======================================================================================
-# ✅ 회원 조회 (JSON 전용)
-# ======================================================================================
-@app.route("/find_member", methods=["POST"])
-def find_member():
+
+@app.route("/search_member", methods=["POST"])
+def search_member():
     """
-    회원 조회 자동 분기 API
-    - before_request + analyze_input 에서 intent/query/raw_text 추출
-    - g.query 값을 기반으로 find_member_internal 호출
+    회원 검색 허브 API
+    - query 값이 '코드...' → search_by_code_logic() 호출
+    - 그 외 → find_member_logic() 호출
+    """
+    try:
+        data = request.get_json() or {}
+        query = (data.get("query") or "").strip()
+
+        if not query:
+            return app.response_class(
+                response=json.dumps({"status": "error", "message": "검색어(query)가 필요합니다."}, ensure_ascii=False),
+                status=400,
+                mimetype="application/json"
+            )
+
+        # g.query 강제 세팅 (logic 함수들이 g.query 사용)
+        g.query = {"query": query, "raw_text": query}
+
+        if query.startswith("코드") or query.lower().startswith("code"):
+            result = search_by_code_logic()
+        else:
+            result = find_member_logic()
+
+        return app.response_class(
+            response=json.dumps(result, ensure_ascii=False),
+            status=200 if result.get("status") == "success" else 400,
+            mimetype="application/json"
+        )
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return app.response_class(
+            response=json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False),
+            status=500,
+            mimetype="application/json"
+        )
+
+
+
+# ======================================================================================
+# ✅ 회원 조회 (코드 검색 전용)
+# ======================================================================================
+def search_by_code_logic() -> dict:
+    """
+    코드 기반 회원 검색 함수 (항상 리스트 형식 출력)
+    - before_request 에서 g.query, g.raw_text 사용
+    """
+    query = g.query.get("query")
+    raw_text = g.query.get("raw_text")
+
+    if not query:
+        return {"status": "error", "message": "검색어(query)를 입력하세요."}
+
+    # ✅ 코드 정규화
+    query = normalize_code_query(query)
+
+    if not query.startswith("코드"):
+        return {"status": "error", "message": "올바른 코드 검색어가 아닙니다. 예: 코드a"}
+
+    code_value = query.replace("코드", "").strip().upper()
+
+    # ✅ DB 조회
+    rows = get_rows_from_sheet("DB")
+    results = [
+        row for row in rows
+        if str(row.get("코드", "")).strip().upper() == code_value
+    ]
+
+    # ✅ 결과 포맷
+    formatted_results = []
+    for r in results:
+        member_name = str(r.get("회원명", "")).strip()
+        member_number = str(r.get("회원번호", "")).strip()
+        special_number = str(r.get("특수번호", "")).strip()
+        phone = str(r.get("휴대폰번호", "")).strip()
+
+        parts = []
+        if member_number:
+            parts.append(f"회원번호: {member_number}")
+        if special_number:
+            parts.append(f"특수번호: {special_number}")
+        if phone:
+            parts.append(f"휴대폰: {phone}")
+
+        formatted = f"{member_name} ({', '.join(parts)})" if parts else member_name
+        formatted_results.append((member_name, formatted))
+
+    formatted_results.sort(key=lambda x: x[0])
+
+    return {
+        "status": "success",
+        "query": raw_text,
+        "code": code_value,
+        "count": len(formatted_results),
+        "results": [f for _, f in formatted_results]
+    }
+
+
+def find_member_logic() -> dict:
+    """
+    회원 조회 함수 (g.query 기반)
     """
     query = g.query.get("query")
     if not query:
-        return jsonify({"error": "회원 조회를 위한 query가 필요합니다."}), 400
+        return {"status": "error", "message": "회원 조회를 위한 query가 필요합니다."}
 
     try:
-        # g.query["query"]가 dict 형식일 경우 → 필드 매핑
         if isinstance(query, dict):
             results = find_member_internal(
                 name=query.get("회원명", ""),
@@ -449,245 +564,65 @@ def find_member():
                 special=query.get("특수번호", "")
             )
         else:
-            # 문자열 query는 이름 검색으로 처리 (fallback)
             results = find_member_internal(name=query)
 
-        return jsonify(results)
+        return {"status": "success", "results": results}
 
     except Exception as e:
-        return jsonify({"error": f"회원 조회 실패: {str(e)}"}), 500
+        return {"status": "error", "message": f"회원 조회 실패: {str(e)}"}
+
+
+
+# ======================================================================================
+# ✅ 회원 조회 (JSON 전용)
+# ======================================================================================
+def find_member_logic() -> dict:
+    """
+    회원 조회 함수 (g.query 기반)
+    """
+    query = g.query.get("query")
+    if not query:
+        return {"status": "error", "message": "회원 조회를 위한 query가 필요합니다."}
+
+    try:
+        if isinstance(query, dict):
+            results = find_member_internal(
+                name=query.get("회원명", ""),
+                number=query.get("회원번호", ""),
+                code=query.get("코드", ""),
+                phone=query.get("휴대폰번호", ""),
+                special=query.get("특수번호", "")
+            )
+        else:
+            results = find_member_internal(name=query)
+
+        return {"status": "success", "results": results}
+
+    except Exception as e:
+        return {"status": "error", "message": f"회원 조회 실패: {str(e)}"}
     
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
 # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
-# ======================================================================================
-# ✅ 자연어 기반 회원 검색 API
-# ======================================================================================
-@app.route("/members/search-nl", methods=["POST"])
-def search_by_natural_language():
-    """
-    회원 자연어 검색 API (자연어 전용)
-    📌 설명:
-    - 자연어 문장에서 (필드, 키워드) 조건들을 추출하여 DB 시트에서 회원 검색
-    - 조건 여러 개 입력 시 AND 검색
-    - 기본은 텍스트 리스트 출력 (회원명, 회원번호, 휴대폰번호, 코드만 표시)
-    - {"detail": true} 옵션 → JSON 상세 응답
-    - 기본 20건(limit), offset으로 페이지네이션
-    """
-    data = request.get_json() or {}
-    query = (data.get("query") or data.get("text") or "").strip()
-    detail = bool(data.get("detail", False))
-    offset = int(data.get("offset", 0))
-    limit = 20
-
-    if not query:
-        return jsonify({"error": "검색어(query)가 필요합니다."}), 400
-
-    # ✅ 조건 추출
-    conditions = parse_natural_query(query)
-
-    # ✅ tuple/list → dict 변환 방어 코드
-    if isinstance(conditions, tuple) and len(conditions) == 2:
-        conditions = {conditions[0]: conditions[1]}
-    elif isinstance(conditions, list):
-        try:
-            conditions = {k: v for k, v in conditions}
-        except Exception:
-            conditions = {}
-
-    if not isinstance(conditions, dict):
-        return jsonify({"error": "조건 파싱 실패"}), 400
-
-    # ✅ 회원명 직접 입력일 경우
-    if not conditions and re.fullmatch(r"[가-힣]{2,4}", query):
-        conditions = {"회원명": query}
-
-    sheet = get_member_sheet()
-    results = search_members(sheet, conditions)
-
-    if not detail:
-        simplified = [
-            {k: row.get(k) for k in ["회원명", "회원번호", "휴대폰번호", "코드"]}
-            for row in results
-        ]
-        return jsonify(simplified[offset:offset+limit])
-
-    return jsonify(results[offset:offset+limit])
-
-
-
-
-
-# ======================================================================================
-# ✅ GET 방식 자연어 검색 (테스트용)
-# ======================================================================================
-@app.route("/searchMemberByNaturalText", methods=["GET"])
-def api_search_member_by_natural_text():
-    query = request.args.get("query", "").strip()
-    if not query:
-        return jsonify({"error": "검색어가 비어있습니다."}), 400
-
-    results = searchMemberByNaturalText(query)
-    return jsonify(results)
-
-
-
-
-
-@app.route("/search_member", methods=["GET", "POST"])
-def api_search_member():
-    """
-    회원 검색 API
-    - GET 방식: /search_member?query=코드a
-    - POST 방식: { "query": "코드a" } 또는 { "코드": "a" }
-    """
-    if request.method == "POST":
-        body = request.get_json(silent=True) or {}
-        query = body.get("query") or body.get("코드", "")
-    else:
-        query = request.args.get("query", "").strip()
-
-    if not query:
-        return jsonify({"error": "검색어(query 또는 코드)를 입력하세요."}), 400
-
-    try:
-        results = searchMemberByNaturalText(str(query))
-        return jsonify(results)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-    
-
-
-
-
-
-@app.route("/search_by_code", methods=["GET", "POST"])
-def search_by_code():
-    """
-    코드 기반 회원 검색 API (항상 리스트 형식 출력)
-    - GET:  /search_by_code?query=코드a
-    - POST: { "query": "코드a" }
-
-    허용 입력: 코드a, 코드 A, 코드: a, 코드 :A
-    결과: code_value = A (영문 대문자)
-    DB 조회: 코드 필드 정확히 일치 (대소문자 무시)
-    반환: 회원명 기준 오름차순 정렬
-    """
-    try:
-        # 1. 입력값 받기
-        if request.method == "POST":
-            body = request.get_json(silent=True) or {}
-            query = (body.get("query") or "").strip()   # ✅ .lower() 제거
-        else:
-            query = (request.args.get("query") or "").strip()   # ✅ .lower() 제거
-
-        if not query:
-            return jsonify({"error": "검색어(query)를 입력하세요."}), 400
-
-        # 2. "코드" 뒤의 콜론(:, ：) 및 공백 제거
-        query = re.sub(r"코드\s*[:：]?\s*", "코드", query, flags=re.IGNORECASE)
-
-        # 3. 코드값 정규화 (영문 알파벳만 허용, 뒤 공백 허용)
-        match = re.match(r"코드([a-z])\s*$", query, re.IGNORECASE)  # ✅ 공백 허용
-        if not match:
-            return jsonify({"error": "올바른 코드 검색어가 아닙니다. 예: 코드a"}), 400
-
-        code_value = match.group(1).upper()  # 항상 대문자로 변환
-
-        # 4. DB 시트 조회 (코드 필드 정확히 일치, 대소문자 무시)
-        rows = get_rows_from_sheet("DB")
-        results = [
-            row for row in rows
-            if str(row.get("코드", "")).strip().upper() == code_value
-        ]
-
-        # 5. 결과 포맷 변환
-        formatted_results = []
-        for r in results:
-            member_name = str(r.get("회원명", "")).strip()
-            member_number = str(r.get("회원번호", "")).strip()
-            special_number = str(r.get("특수번호", "")).strip()
-            phone = str(r.get("휴대폰번호", "")).strip()
-
-            parts = []
-            if member_number:
-                parts.append(f"회원번호: {member_number}")
-            if special_number:
-                parts.append(f"특수번호: {special_number}")
-            if phone:
-                parts.append(f"휴대폰: {phone}")
-
-            formatted = f"{member_name} ({', '.join(parts)})" if parts else member_name
-            formatted_results.append((member_name, formatted))
-
-        # 6. 회원명 기준 오름차순 정렬
-        formatted_results.sort(key=lambda x: x[0])
-
-        # ✅ jsonify 대신 app.response_class 사용 + ensure_ascii=False
-        return app.response_class(
-            response=json.dumps({
-                "status": "success",
-                "query": query,
-                "code": code_value,
-                "count": len(formatted_results),
-                "results": [f for _, f in formatted_results]
-            }, ensure_ascii=False),   # ✅ 한글 깨짐 방지
-            status=200,
-            mimetype="application/json"
-        )
-    
-    except Exception as e:
-        import traceback; traceback.print_exc()
-        return app.response_class(
-            response=json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False),
-            status=500,
-            mimetype="application/json"
-        )
-    
-    
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # ======================================================================================
 # ✅ 회원 수정
 # ======================================================================================
@@ -873,14 +808,20 @@ def delete_member_route():
     회원 전체 삭제 API
     📌 설명:
     - 회원명을 기준으로 DB 시트에서 전체 행을 삭제합니다.
+    - before_request 에서 g.query 에 값이 세팅되어 있어야 함.
     📥 입력(JSON 예시):
     {
       "회원명": "홍길동"
     }
     """
     try:
-        req = request.get_json(force=True)
-        name = (req.get("회원명") or "").strip()
+        query = g.query.get("query") if hasattr(g, "query") else None
+
+        # query가 dict일 경우 회원명 필드 확인
+        if isinstance(query, dict):
+            name = (query.get("회원명") or "").strip()
+        else:
+            name = (query or "").strip()
 
         if not name:
             return jsonify({"error": "회원명은 필수 입력 항목입니다."}), 400
@@ -889,9 +830,9 @@ def delete_member_route():
         return jsonify(result), status
 
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        import traceback; traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
 
 
 
