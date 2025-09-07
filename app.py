@@ -256,9 +256,6 @@ def guess_intent_entry():
     }), 400
 
 
-# 잘됨
-
-
 
 
 # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
@@ -280,7 +277,7 @@ def member_find_auto():
 
     # ✅ "코드a" / "코드 a" → search_member로 강제 분기
     if text in ["코드a", "코드 a"] or text.startswith("코드"):
-        from service.service_member import searchMemberByNaturalText
+        from utils.utils_search import searchMemberByNaturalText
         return jsonify(searchMemberByNaturalText(text))
 
     # 단문 이름 → 회원 조회 실행
