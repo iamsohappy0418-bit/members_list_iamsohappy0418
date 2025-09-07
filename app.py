@@ -285,12 +285,12 @@ def preprocess_input():
     if "query" in data:
         query = data["query"]
         raw_text = query
-        parsed = analyze_input(raw_text)
+        parsed = nlu_to_pc_input(raw_text)
         intent = parsed.get("intent")
 
     # ✅ 자연어 입력
     elif raw_text:
-        parsed = analyze_input(raw_text)
+        parsed = nlu_to_pc_input(raw_text)
         query = parsed.get("query")
         intent = parsed.get("intent")
 
