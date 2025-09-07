@@ -212,21 +212,30 @@ def debug_sheets():
 def guess_intent(text: str) -> str:
     """
     자연어 문장에서 intent 추측
-    - 회원 / 주문 / 메모 / 후원수당 카테고리 구분
+    - 회원등록 / 회원조회 / 주문 / 메모 / 후원수당 카테고리 구분
     """
-    text = (text or "")
-    # 회원
+    text = (text or "").strip()
+
+    # 회원 등록
+    if any(k in text for k in ["회원등록", "회원 추가", "회원가입"]):
+        return "register_member"
+
+    # 회원 조회/기타
     if "회원" in text:
         return "member_find_auto"
+
     # 주문
     if "주문" in text:
         return "order_find_auto"
+
     # 메모 / 일지
     if any(k in text for k in ["상담일지", "개인일지", "활동일지", "메모"]):
         return "memo_find_auto"
+
     # 후원수당
     if "후원수당" in text:
         return "commission_find_auto"
+
     return "unknown"
 
 
@@ -241,6 +250,8 @@ def guess_intent_entry():
 
     intent = guess_intent(text)
 
+    if intent == "register_member":
+        return redirect("/register_member")
     if intent == "member_find_auto":
         return redirect("/member_find_auto")
     if intent == "order_find_auto":
@@ -254,6 +265,8 @@ def guess_intent_entry():
         "status": "error",
         "message": f"❌ 처리할 수 없는 요청입니다. (intent={intent})"
     }), 400
+
+
 
 
 
@@ -300,6 +313,11 @@ def member_find_auto():
 
     # 기본 → 자연어 기반 검색 실행
     return search_by_natural_language()
+
+
+
+
+
 
 
 
