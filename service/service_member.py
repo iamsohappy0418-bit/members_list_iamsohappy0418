@@ -131,12 +131,14 @@ def find_member_in_text(text: str) -> str | None:
     return None
 
 
-def find_member_internal(name: str = "", number: str = "", code: str = "") -> list[dict]:
+def find_member_internal(name: str = "", number: str = "", code: str = "", phone: str = "", special: str = "") -> list[dict]:
     """
-    회원명/회원번호/코드 기반 단순 검색
+    회원명 / 회원번호 / 코드 / 휴대폰번호 / 특수번호 기반 단순 검색
     - name: 부분일치 허용 (소문자 비교)
-    - number: 정확히 일치 (회원번호)
+    - number: 정확히 일치 (회원번호, 5~8자리 숫자)
     - code: 정확히 일치 (대소문자 무시)
+    - phone: 정확히 일치 (010 시작, 10~11자리, 하이픈 허용)
+    - special: 특수번호 정확히 일치
     """
     sheet = get_member_sheet()
     records = sheet.get_all_records()
@@ -144,34 +146,46 @@ def find_member_internal(name: str = "", number: str = "", code: str = "") -> li
     results = []
     seen = set()  # ✅ 중복 제거용
 
+    # 입력값 전처리
     name = (name or "").strip().lower()
     number = (number or "").strip()
     code = (code or "").strip().lower()
+    phone = (phone or "").strip()
+    special = (special or "").strip().lower()
 
     for row in records:
         member_name = str(row.get("회원명", "")).strip().lower()
         member_number = str(row.get("회원번호", "")).strip()
         member_code = str(row.get("코드", "")).strip().lower()
+        member_phone = str(row.get("휴대폰번호", "")).strip()
+        member_special = str(row.get("특수번호", "")).strip().lower()
 
         matched = False
 
-        # 회원명 부분 일치
+        # ✅ 회원명 부분 일치
         if name and name in member_name:
             matched = True
-        # 회원번호 정확 일치
-        elif number and number == member_number:
+        # ✅ 회원번호 정확 일치 (5~8자리)
+        elif number and re.fullmatch(r"\d{5,8}", number) and number == member_number:
             matched = True
-        # 코드 정확 일치 (대소문자 무시)
+        # ✅ 코드 정확 일치
         elif code and code == member_code:
+            matched = True
+        # ✅ 휴대폰번호 정확 일치
+        elif phone and re.fullmatch(r"(010-\d{3,4}-\d{4}|010\d{7,8})", phone) and phone == member_phone:
+            matched = True
+        # ✅ 특수번호 정확 일치
+        elif special and special == member_special:
             matched = True
 
         if matched:
-            key = f"{member_name}:{member_number}:{member_code}"
+            key = f"{member_name}:{member_number}:{member_code}:{member_phone}:{member_special}"
             if key not in seen:   # ✅ 중복 방지
                 results.append(row)
                 seen.add(key)
 
     return results
+
 
 
 

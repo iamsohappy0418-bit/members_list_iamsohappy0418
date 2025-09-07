@@ -125,6 +125,10 @@ from utils.utils_search import searchMemberByNaturalText
 from utils.utils_search import fallback_natural_search
 from utils.sheets import get_rows_from_sheet
 
+from flask import g
+
+
+
 
 
 
@@ -207,23 +211,29 @@ def debug_sheets():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 # =============================================================
-# =============================================================S
-
-
+# =============================================================
+# =============================================================
+# =============================================================
+# =============================================================
+# =============================================================
 
 
 def guess_intent(text: str) -> str:
     """
-    자연어 문장에서 intent 추측
-    - 회원등록 / 회원조회 / 주문 / 메모 / 후원수당 카테고리 구분
+    자연어 문장에서 intent 추측 (fallback 용)
+    - 회원등록 / 회원조회 / 주문 / 메모 / 후원수당 / 코드검색
     """
-    text = (text or "").strip()
+    text = (text or "").strip().lower()
+
+    # ✅ 코드 검색 (코드a, 코드 a, 코드b ...)
+    if text.startswith("코드"):
+        return "search_by_code"
 
     # 회원 등록
     if any(k in text for k in ["회원등록", "회원 추가", "회원가입"]):
         return "register_member"
 
-    # 회원 조회/기타
+    # 회원 조회
     if "회원" in text:
         return "member_find_auto"
 
@@ -239,35 +249,160 @@ def guess_intent(text: str) -> str:
     if "후원수당" in text:
         return "commission_find_auto"
 
+    # 기본값
     return "unknown"
 
+
+
+
+
+# =============================================================
+# =============================================================
+# =============================================================
+# =============================================================
+
+@app.before_request
+def preprocess_input():
+    """
+    모든 요청에서 text/query 입력을 정규화해서 g.query 에 저장
+    g.query 구조:
+    {
+        "query": 변환된 쿼리,
+        "intent": 추정된 의도,
+        "raw_text": 원본 입력
+    }
+    """
+    data = {}
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+    elif request.method == "GET":
+        data = request.args.to_dict()
+
+    raw_text = data.get("text", "").strip() if "text" in data else None
+    query, intent = None, None
+
+    # ✅ PC 입력
+    if "query" in data:
+        query = data["query"]
+        raw_text = query
+        parsed = analyze_input(raw_text)
+        intent = parsed.get("intent")
+
+    # ✅ 자연어 입력
+    elif raw_text:
+        parsed = analyze_input(raw_text)
+        query = parsed.get("query")
+        intent = parsed.get("intent")
+
+    g.query = {
+        "query": query,
+        "intent": intent,
+        "raw_text": raw_text
+    }
+
+
+
+
+# ==================================================
+# ==================================================
+
+def nlu_to_pc_input(text: str) -> dict:
+    """
+    자연어 입력을 PC 입력 방식(query dict)으로 변환
+    query + intent 동시 반환
+    """
+    text = (text or "").strip()
+
+    # ✅ 코드 검색 (코드a, 코드 b ...)
+    match = re.search(r"코드\s*([a-zA-Z])", text, re.IGNORECASE)
+    if match:
+        return {"query": f"코드{match.group(1).upper()}", "intent": "search_by_code"}
+
+    # ✅ 회원명 검색 ("홍길동 회원", "회원 홍길동")
+    match = re.search(r"([가-힣]{2,4})\s*회원", text)
+    if match:
+        return {"query": f"{{ 회원명: '{match.group(1)}' }}", "intent": "find_member"}
+
+    # ✅ 회원번호 (숫자 5~8자리)
+    match = re.fullmatch(r"\d{5,8}", text)
+    if match:
+        return {"query": f"{{ 회원번호: '{match.group(0)}' }}", "intent": "find_member"}
+
+    # ✅ 휴대폰번호 (010으로 시작, 10~11자리 / 하이픈 허용)
+    match = re.fullmatch(r"(010-\d{3,4}-\d{4}|010\d{7,8})", text)
+    if match:
+        return {"query": f"{{ 휴대폰번호: '{match.group(0)}' }}", "intent": "find_member"}
+
+    # ✅ 특수번호 검색 ("특수번호 77")
+    match = re.search(r"특수번호\s*([a-zA-Z0-9!@#]+)", text)
+    if match:
+        return {"query": f"{{ 특수번호: '{match.group(1)}' }}", "intent": "find_member"}
+
+    # ✅ 단순 이름 입력 ("홍길동")
+    if re.fullmatch(r"[가-힣]{2,4}", text):
+        return {"query": f"{{ 회원명: '{text}' }}", "intent": "find_member"}
+
+    # ✅ 주문 ("홍길동 주문", "제품 주문")
+    if "주문" in text:
+        match = re.search(r"([가-힣]{2,4}).*주문", text)
+        if match:
+            return {"query": f"{{ 주문회원: '{match.group(1)}' }}", "intent": "order_find_auto"}
+        return {"query": "{ 주문: true }", "intent": "order_find_auto"}
+
+    # ✅ 메모 / 일지
+    if any(k in text for k in ["메모", "상담일지", "개인일지", "활동일지"]):
+        return {"query": "{ 메모: true }", "intent": "memo_find_auto"}
+
+    # ✅ 후원수당
+    if "후원수당" in text:
+        return {"query": "{ 후원수당: true }", "intent": "commission_find_auto"}
+
+    # ✅ 기본 반환 (그대로 넘김)
+    return {"query": text, "intent": "unknown"}
+
+
+
+# ==================================================
+# ==================================================
 
 @app.route("/guess_intent", methods=["POST"])
 def guess_intent_entry():
     """
-    자연어 입력의 진입점
-    - intent를 판별하고 해당 자동 분기 API로 redirect
+    자연어/PC 입력 intent 라우팅 허브
+    - before_request + analyze_input 에서 query/intent/raw_text 추출됨
+    - intent 에 맞는 엔드포인트로 redirect
     """
-    data = request.get_json(silent=True) or {}
-    text = data.get("text", "")
+    if not g.query or not g.query.get("intent"):
+        return jsonify({
+            "status": "error",
+            "message": "❌ intent를 추출할 수 없습니다."
+        }), 400
 
-    intent = guess_intent(text)
+    intent = g.query["intent"]
 
-    if intent == "register_member":
-        return redirect("/register_member")
-    if intent == "member_find_auto":
-        return redirect("/member_find_auto")
-    if intent == "order_find_auto":
-        return redirect("/order_find_auto")
-    if intent == "memo_find_auto":
-        return redirect("/memo_find_auto")
-    if intent == "commission_find_auto":
-        return redirect("/commission_find_auto")
+    # intent → 엔드포인트 매핑
+    intent_map = {
+        "register_member": "/register_member",
+        "find_member": "/find_member",
+        "order_find_auto": "/order_find_auto",
+        "memo_find_auto": "/memo_find_auto",
+        "commission_find_auto": "/commission_find_auto",
+        "search_by_code": "/search_by_code",
+    }
+
+    if intent in intent_map:
+        return redirect(intent_map[intent])
 
     return jsonify({
         "status": "error",
         "message": f"❌ 처리할 수 없는 요청입니다. (intent={intent})"
     }), 400
+
+
+
+# ==================================================
+# ==================================================
+
 
 
 
@@ -279,43 +414,6 @@ def guess_intent_entry():
 # ✅ 회원 조회 자동 분기 API
 # ======================================================================================
 # ======================================================================================
-@app.route("/member_find_auto", methods=["POST"])
-def member_find_auto():
-    """
-    회원 조회 자동 분기 API
-    📌 설명:
-    - 자연어 기반 요청(text, query 포함) → search_by_natural_language
-    - JSON 기반 요청(회원명, 회원번호 포함) → find_member
-    - "코드a", "코드 a" → search_member (코드 기반 검색)
-    """
-    data = request.get_json(silent=True) or {}
-    text = (data.get("text") or data.get("query") or "").strip().lower()
-
-    # ✅ "코드a" / "코드 a" → search_by_code 엔드포인트로 redirect
-    if text in ["코드a", "코드 a"] or text.startswith("코드"):
-        # redirect 대신 search_by_code 함수 직접 실행
-        return search_by_code()
-
-    # 단문 이름 → 회원 조회 실행
-    if re.fullmatch(r"[가-힣]{2,4}", text):
-        return jsonify(find_member_internal(name=text))
-
-    # 회원번호 숫자 → 회원 조회 실행
-    if re.fullmatch(r"\d{5,}", text):
-        return jsonify(find_member_internal(number=text))
-
-    # 키워드 기반 분기
-    if any(k in text for k in ["등록", "추가"]):
-        return jsonify({"status": "success", "action": "register_member"})
-    if any(k in text for k in ["수정", "변경", "업데이트"]):
-        return jsonify({"status": "success", "action": "update_member"})
-    if any(k in text for k in ["삭제", "지워", "제거"]):
-        return jsonify({"status": "success", "action": "delete_member"})
-    if any(k in text for k in ["조회", "찾아", "검색", "알려줘"]):
-        return jsonify(find_member_internal(name=text))   # ❌ dict → ✅ name
-
-    # 기본 → 자연어 기반 검색 실행
-    return search_by_natural_language()
 
 
 
@@ -331,21 +429,33 @@ def member_find_auto():
 @app.route("/find_member", methods=["POST"])
 def find_member():
     """
-    회원 조회 API (JSON 전용)
-    📌 설명:
-    회원명 또는 회원번호를 기준으로 DB 시트에서 정보를 조회합니다.
-    📥 입력(JSON 예시):
-    {
-      "회원명": "신금자"
-    }
+    회원 조회 자동 분기 API
+    - before_request + analyze_input 에서 intent/query/raw_text 추출
+    - g.query 값을 기반으로 find_member_internal 호출
     """
-    data = request.get_json() or {}
+    query = g.query.get("query")
+    if not query:
+        return jsonify({"error": "회원 조회를 위한 query가 필요합니다."}), 400
 
-    # text 필드 허용 → 회원명으로 변환
-    name = data.get("회원명") or data.get("text", "")
-    number = data.get("회원번호", "")
+    try:
+        # g.query["query"]가 dict 형식일 경우 → 필드 매핑
+        if isinstance(query, dict):
+            results = find_member_internal(
+                name=query.get("회원명", ""),
+                number=query.get("회원번호", ""),
+                code=query.get("코드", ""),
+                phone=query.get("휴대폰번호", ""),
+                special=query.get("특수번호", "")
+            )
+        else:
+            # 문자열 query는 이름 검색으로 처리 (fallback)
+            results = find_member_internal(name=query)
 
-    return jsonify(find_member_internal(name=name, number=number))
+        return jsonify(results)
+
+    except Exception as e:
+        return jsonify({"error": f"회원 조회 실패: {str(e)}"}), 500
+    
 
 
 
@@ -694,14 +804,15 @@ def register_member_route():
     - 또는 JSON 형식: {"회원명": "이판주", "회원번호": "12345678", "휴대폰번호": "010-2759-9001"}
     """
     try:
-        data = request.get_json() or {}
+        # ✅ before_request에서 변환된 g.query 사용
+        query = g.query.get("query")
+        raw_text = g.query.get("raw_text")
 
-        # 1) 요청문 기반 파싱
-        요청문 = data.get("요청문", "").strip()
         name, number, phone = "", "", ""
 
-        if 요청문:
-            parts = 요청문.split()
+        # 1) 요청문 기반 파싱 (자연어 입력일 경우)
+        if raw_text and "회원등록" in raw_text:
+            parts = raw_text.split()
             for part in parts:
                 if re.fullmatch(r"[가-힣]{2,4}", part):  # 이름
                     name = part
@@ -710,14 +821,16 @@ def register_member_route():
                 elif re.fullmatch(r"(010-\d{3,4}-\d{4}|\d{10,11})", part):  # 휴대폰
                     phone = part
 
-        # 2) JSON 직접 입력 허용
-        name = data.get("회원명", name).strip()
-        number = data.get("회원번호", number).strip()
-        phone = data.get("휴대폰번호", phone).strip()
+        # 2) PC 입력 방식 (JSON으로 회원명, 회원번호, 휴대폰번호 직접 입력)
+        if isinstance(query, dict):
+            name = query.get("회원명", name).strip()
+            number = query.get("회원번호", number).strip()
+            phone = query.get("휴대폰번호", phone).strip()
 
         if not name:
             return jsonify({"error": "회원명은 필수 입력 항목입니다."}), 400
 
+        # ✅ 실제 회원 등록 처리
         result = register_member_internal(name, number, phone)
         return jsonify(result), 201
 
@@ -725,6 +838,7 @@ def register_member_route():
         return jsonify({"error": str(ve)}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 
 
