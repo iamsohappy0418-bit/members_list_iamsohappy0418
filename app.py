@@ -123,6 +123,7 @@ from service.service_commission import (
 from utils.sheets import get_gsheet_data, get_member_sheet   # ✅ 루트 sheets.py에서 가져옴
 from utils.utils_search import searchMemberByNaturalText
 from utils.utils_search import fallback_natural_search
+from utils.sheets import get_rows_from_sheet
 
 
 
@@ -205,7 +206,8 @@ def debug_sheets():
         }), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
+# =============================================================
+# =============================================================S
 
 
 
@@ -289,10 +291,10 @@ def member_find_auto():
     data = request.get_json(silent=True) or {}
     text = (data.get("text") or data.get("query") or "").strip().lower()
 
-    # ✅ "코드a" / "코드 a" → search_member로 강제 분기
+    # ✅ "코드a" / "코드 a" → search_by_code 엔드포인트로 redirect
     if text in ["코드a", "코드 a"] or text.startswith("코드"):
-        from utils.utils_search import searchMemberByNaturalText
-        return jsonify(searchMemberByNaturalText(text))
+        # redirect 대신 search_by_code 함수 직접 실행
+        return search_by_code()
 
     # 단문 이름 → 회원 조회 실행
     if re.fullmatch(r"[가-힣]{2,4}", text):
@@ -447,6 +449,46 @@ def api_search_member():
 
 
 
+
+
+@app.route("/search_by_code", methods=["GET", "POST"])
+def search_by_code():
+    """
+    코드 기반 회원 검색 API
+    - GET 방식: /search_by_code?query=코드a
+    - POST 방식: { "query": "코드a" }
+    """
+    if request.method == "POST":
+        body = request.get_json(silent=True) or {}
+        query = body.get("query", "").strip().lower()
+    else:
+        query = (request.args.get("query") or "").strip().lower()
+
+    if not query:
+        return jsonify({"error": "검색어(query)를 입력하세요."}), 400
+
+    code_value = ""
+    if query in ["코드a", "코드 a"]:
+        code_value = "A"
+    elif query.startswith("코드"):
+        code_value = query.replace("코드", "").strip().upper()
+
+    if not code_value:
+        return jsonify({"error": "올바른 코드 검색어가 아닙니다. 예: 코드a"}), 400
+
+    try:
+        rows = get_rows_from_sheet("DB")  # ✅ utils.sheets 함수 사용
+        results = [row for row in rows if str(row.get("코드", "")).strip().upper() == code_value]
+
+        return jsonify({
+            "status": "success",
+            "query": query,
+            "code": code_value,
+            "count": len(results),
+            "results": results
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 
@@ -978,10 +1020,7 @@ def compat_parse_and_save_order():
     """옛 API 호환용 → /order/nl"""
     return order_nl()
 
-@app.route("/find_order", methods=["POST"])
-def compat_find_order():
-    """옛 API 호환용 → /order/nl"""
-    return order_nl()
+
 
 @app.route("/orders/search-nl", methods=["POST"])
 def compat_orders_search_nl():
