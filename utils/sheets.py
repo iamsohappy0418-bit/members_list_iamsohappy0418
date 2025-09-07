@@ -192,17 +192,57 @@ def get_sheet():
 
 
 
-def get_rows_from_sheet(sheet_name: str):
-    """
-    DB 시트에서 모든 행 불러오기
-    실제 구현은 Google Sheets API (gspread 등) 연결 필요
-    """
-    # 🔧 TODO: Google Sheets API 연동
-    # 예시 데이터
-    return [
-        {"회원명": "이태수", "회원번호": "22366", "코드": "A", "휴대폰번호": "010-2759-9001"},
-        {"회원명": "김선영", "회원번호": "36739440", "코드": "A", "휴대폰번호": ""},
-        {"회원명": "박지현", "회원번호": "12345", "코드": "B", "휴대폰번호": "010-1111-2222"},
+import os
+import json
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+from gspread.exceptions import WorksheetNotFound
+
+# --------------------------------------------------
+# ✅ gspread 클라이언트 생성
+# --------------------------------------------------
+def get_gspread_client():
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive",
     ]
+
+    # Render 환경 (환경변수에 JSON 문자열 저장)
+    creds_json = os.getenv("GOOGLE_CREDENTIALS_JSON")
+    if creds_json:
+        creds_dict = json.loads(creds_json)
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    else:
+        # 로컬 개발 환경 (credentials.json 파일 사용)
+        creds_path = os.getenv("GOOGLE_CREDENTIALS_PATH", "credentials.json")
+        creds = ServiceAccountCredentials.from_json_keyfile_name(creds_path, scope)
+
+    return gspread.authorize(creds)
+
+# --------------------------------------------------
+# ✅ 시트에서 모든 행 불러오기
+# --------------------------------------------------
+def get_rows_from_sheet(sheet_name: str):
+    try:
+        client = get_gspread_client()
+
+        # 환경변수에서 Sheet key/title 불러오기
+        sheet_key = os.getenv("GOOGLE_SHEET_KEY")
+        sheet_title = os.getenv("GOOGLE_SHEET_TITLE")
+
+        if sheet_key:
+            sheet = client.open_by_key(sheet_key).worksheet(sheet_name)
+        elif sheet_title:
+            sheet = client.open(sheet_title).worksheet(sheet_name)
+        else:
+            raise ValueError("❌ GOOGLE_SHEET_KEY 또는 GOOGLE_SHEET_TITLE 환경변수가 필요합니다.")
+
+        # ✅ dict 리스트 반환
+        return sheet.get_all_records()
+
+    except WorksheetNotFound:
+        raise ValueError(f"❌ 시트 '{sheet_name}'을(를) 찾을 수 없습니다.")
+    except Exception as e:
+        raise RuntimeError(f"❌ 시트 데이터 불러오기 실패: {e}")
 
 
