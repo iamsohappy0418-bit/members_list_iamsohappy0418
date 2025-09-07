@@ -119,9 +119,10 @@ from service.service_commission import (
     delete_commission,
 )
 
-from parser.parser_member import fallback_natural_search   # ✅ 여기서 직접 임포트
+
 from utils.sheets import get_gsheet_data, get_member_sheet   # ✅ 루트 sheets.py에서 가져옴
 from utils.utils_search import searchMemberByNaturalText
+from utils.utils_search import fallback_natural_search
 
 
 
