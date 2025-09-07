@@ -122,6 +122,20 @@ def get_db_sheet():
 def get_member_sheet():
     return get_worksheet("DB")
 
+def get_gsheet_data(sheet_name: str = "DB"):
+    """
+    구글 시트 데이터 가져오기
+    - sheet_name 기본값은 'DB'
+    - 실제 gspread 서비스 계정 필요
+    """
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    creds = ServiceAccountCredentials.from_json_keyfile_name("service_account.json", scope)
+    client = gspread.authorize(creds)
+
+    sheet = client.open("회원관리").worksheet(sheet_name)
+    return sheet.get_all_records()
+
+
 
 # 주문
 def get_product_order_sheet():

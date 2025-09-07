@@ -18,7 +18,9 @@ from utils.sheets import get_worksheet, get_member_sheet, delete_row
 from utils.utils_search import find_all_members_from_sheet, fallback_natural_search
 from utils.sheets import get_rows_from_sheet
 from utils.utils_search import find_all_members_from_sheet
+# utils/text_cleaner.py
 
+from  utils.text_cleaner import build_member_query
 
 
 # ==============================
@@ -428,28 +430,7 @@ def process_member_query(user_input: str):
 
 
 
-def searchMemberByNaturalText(query: str):
-    """
-    자연어 기반 회원 검색
-    - '코드a' 또는 '코드 a' 입력 시 → DB 시트 코드 필드에서 A 검색
-    - '코드 b', '코드 c' 등도 동일 적용
-    - 그 외 → fallback 자연어 검색
-    """
 
-    query = query.strip().lower()  # 입력값 소문자 변환
-
-    # ✅ "코드a" 또는 "코드 a"
-    if query in ["코드a", "코드 a"]:
-        return find_all_members_from_sheet("DB", field="코드", value="A")
-
-    # ✅ "코드 + 알파벳" 패턴
-    if query.startswith("코드"):
-        code_value = query.replace("코드", "").strip().upper()
-        if code_value:
-            return find_all_members_from_sheet("DB", field="코드", value=code_value)
-
-    # ✅ 그 외 → fallback 자연어 검색
-    return fallback_natural_search(query)
 
 
 

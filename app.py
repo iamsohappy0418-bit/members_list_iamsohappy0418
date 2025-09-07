@@ -60,6 +60,7 @@ from parser import (
     parse_memo,
     parse_commission,
     guess_intent,
+    parse_natural_query
 )
 
 from parser.parse_order import (
@@ -118,7 +119,11 @@ from service.service_commission import (
     delete_commission,
 )
 
-from service.service_member import searchMemberByNaturalText
+from parser.parser_member import fallback_natural_search   # ✅ 여기서 직접 임포트
+from utils.sheets import get_gsheet_data, get_member_sheet   # ✅ 루트 sheets.py에서 가져옴
+from utils.utils_search import searchMemberByNaturalText
+
+
 
 
 
@@ -389,49 +394,69 @@ def search_by_natural_language():
 # ✅ GET 방식 자연어 검색 (테스트용)
 # ======================================================================================
 @app.route("/searchMemberByNaturalText", methods=["GET"])
-def search_member_by_natural_text():
+def api_search_member_by_natural_text():
     query = request.args.get("query", "").strip()
     if not query:
         return jsonify({"error": "검색어가 비어있습니다."}), 400
 
-    conditions = parse_natural_query(query)
-    sheet = get_member_sheet()
-    results = search_members(sheet, conditions)
+    results = searchMemberByNaturalText(query)
     return jsonify(results)
 
 
 
 
 
-
-
-
-
 @app.route("/search_member", methods=["GET", "POST"])
-def search_member():
+def api_search_member():
     """
     회원 검색 API
     - GET 방식: /search_member?query=코드a
     - POST 방식: { "query": "코드a" } 또는 { "코드": "a" }
     """
-    query = ""
-
     if request.method == "POST":
         body = request.get_json(silent=True) or {}
-        # JSON 안에서 "query" 또는 "코드" 키워드를 허용
         query = body.get("query") or body.get("코드", "")
-    else:  # GET 요청
+    else:
         query = request.args.get("query", "").strip()
 
     if not query:
         return jsonify({"error": "검색어(query 또는 코드)를 입력하세요."}), 400
 
-    try:         
+    try:
         results = searchMemberByNaturalText(str(query))
         return jsonify(results)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
