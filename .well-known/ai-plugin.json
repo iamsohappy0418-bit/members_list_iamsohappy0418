@@ -1,0 +1,18 @@
+{
+  "schema_version": "v1",
+  "name_for_human": "회원·메모 관리 플러그인",
+  "name_for_model": "memberslist_onrender_com_plugin",
+  "description_for_human": "회원 관리, 주문, 메모, 후원수당을 처리하는 API",
+  "description_for_model": "회원 검색, 등록, 수정, 삭제, 주문, 메모, 후원수당 관리 기능 제공",
+  "auth": {
+    "type": "none"
+  },
+  "api": {
+    "type": "openapi",
+    "url": "https://memberslist.onrender.com/openapi.json"
+  },
+  "logo_url": "https://memberslist.onrender.com/logo.png",
+  "contact_email": "boraminfo@gmail.com",
+  "legal_info_url": "https://memberslist.onrender.com/legal"
+}
+
