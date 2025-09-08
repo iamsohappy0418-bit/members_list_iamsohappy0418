@@ -175,29 +175,24 @@ CORS(app)  # ← 추가
 
 
 
-# 🔹 OpenAPI JSON 로드
+# OpenAPI 스펙
 with open("openapi.json", "r", encoding="utf-8") as f:
     openapi_spec = json.load(f)
 
-
-
-
 @app.route("/openapi.json", methods=["GET"])
 def openapi():
-    """OpenAPI spec 제공"""
     return jsonify(openapi_spec)
 
-# 🔹 ai-plugin.json 서비스 (ChatGPT Plugin manifest)
+# ai-plugin.json (manifest)
 @app.route("/.well-known/ai-plugin.json", methods=["GET"])
 def plugin_manifest():
-    return send_from_directory(".", "ai-plugin.json", mimetype="application/json")
+    # 현재 폴더 기준으로 ai-plugin.json 반환
+    return send_from_directory(os.getcwd(), "ai-plugin.json", mimetype="application/json")
 
-# 🔹 플러그인 로고 서비스
+# 로고
 @app.route("/logo.png", methods=["GET"])
 def plugin_logo():
     return send_from_directory(".", "logo.png", mimetype="image/png")
-
-
 
 
 
