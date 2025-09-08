@@ -1,22 +1,25 @@
-# =====================================================
-# ✅ 공통 유틸 함수 모음 (전역에서 자주 쓰이는 함수만 export)
-# =====================================================
+"""
+utils 패키지 초기화 파일
+공식적으로 공개되는 유틸 함수만 __all__에 정의
+"""
 
-# 날짜/시간 처리
+# --------------------------
+# 날짜/시간 처리 (utils_date)
+# --------------------------
 from .utils_date import (
     now_kst,
     process_order_date,
     parse_dt,
 )
 
-# 문자열 정리 (자연어 처리 중심)
+# --------------------------
+# 문자열 처리 (text_cleaner, utils_string)
+# --------------------------
 from .text_cleaner import (
     clean_content,
     clean_tail_command,
     clean_value_expression,
 )
-
-# 문자열 유틸 (기본 처리)
 from .utils_string import (
     remove_josa,
     remove_spaces,
@@ -25,7 +28,9 @@ from .utils_string import (
     match_condition,
 )
 
-# Google Sheets 기본 유틸
+# --------------------------
+# Google Sheets 관련 (sheets)
+# --------------------------
 from .sheets import (
     get_sheet,
     get_worksheet,
@@ -39,9 +44,13 @@ from .sheets import (
     update_cell,
     safe_update_cell,
     delete_row,
+    get_gsheet_data,
+    get_rows_from_sheet,
 )
 
-# 메모 관련 기본 유틸
+# --------------------------
+# 메모 관련 (utils_memo)
+# --------------------------
 from .utils_memo import (
     get_memo_results,
     format_memo_results,
@@ -49,52 +58,51 @@ from .utils_memo import (
     handle_search_memo,
 )
 
-# OpenAI 관련 (주문 파싱 등)
+# --------------------------
+# OpenAI 관련 (utils_openai)
+# --------------------------
 from .utils_openai import (
     extract_order_from_uploaded_image,
     parse_order_from_text,
 )
 
-# 검색 관련 유틸
+# --------------------------
+# 검색 관련 (utils_search)
+# --------------------------
 from .utils_search import (
-    search_members,
-    parse_natural_query,
+    searchMemberByNaturalText,
+    fallback_natural_search,
+    find_member_in_text,
 )
 
-# 회원 자연어 쿼리 파서 (member_query_parser → parser_query_member 로 통일)
-from .parser_query_member import (
-    infer_member_field,
-    parse_natural_query_multi,
-)
-
+# --------------------------------------------------
+# 공식 공개 API (__all__)
+# --------------------------------------------------
 __all__ = [
-    # utils_date
+    # 날짜/시간
     "now_kst", "process_order_date", "parse_dt",
 
-    # text_cleaner
+    # 문자열 처리
     "clean_content", "clean_tail_command", "clean_value_expression",
-
-    # utils_string
     "remove_josa", "remove_spaces", "split_to_parts",
     "is_match", "match_condition",
 
-    # sheets
-    "get_sheet", "get_worksheet",
-    "get_member_sheet", "get_product_order_sheet",
-    "get_counseling_sheet", "get_personal_memo_sheet",
-    "get_activity_log_sheet", "get_commission_sheet",
-    "append_row", "update_cell", "safe_update_cell", "delete_row",
+    # Google Sheets
+    "get_sheet", "get_worksheet", "get_member_sheet",
+    "get_product_order_sheet", "get_counseling_sheet",
+    "get_personal_memo_sheet", "get_activity_log_sheet",
+    "get_commission_sheet", "append_row", "update_cell",
+    "safe_update_cell", "delete_row", "get_gsheet_data", "get_rows_from_sheet",
 
-    # utils_memo
-    "get_memo_results", "format_memo_results", "filter_results_by_member",
-    "handle_search_memo",
+    # 메모
+    "get_memo_results", "format_memo_results",
+    "filter_results_by_member", "handle_search_memo",
 
-    # utils_openai
+    # OpenAI
     "extract_order_from_uploaded_image", "parse_order_from_text",
 
-    # utils_search
-    "search_members", "parse_natural_query",
-
-    # parser_query_member
-    "infer_member_field", "parse_natural_query_multi",
+    # 검색
+    "searchMemberByNaturalText", "fallback_natural_search", "find_member_in_text",
 ]
+
+

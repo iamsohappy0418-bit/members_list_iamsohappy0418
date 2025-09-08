@@ -3,6 +3,7 @@ import json
 from typing import Dict, Any
 
 from utils import process_order_date, parse_order_from_text, get_product_order_sheet
+from utils.utils_search import find_member_in_text
 
 
 

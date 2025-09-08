@@ -22,6 +22,46 @@ from utils.utils_search import find_all_members_from_sheet
 
 from  utils.text_cleaner import build_member_query
 
+from utils.utils_search import find_member_in_text
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # ==============================
 # 회원 등록 (Create)
@@ -107,84 +147,52 @@ def delete_member(name: str) -> bool:
     return False
 
 
-# ==============================
-# 회원명 텍스트 탐색 (보정용)
-# ==============================
-def find_member_in_text(text: str) -> str | None:
+
+
+
+
+import unicodedata
+from utils import get_rows_from_sheet
+
+def normalize_text(s) -> str:
+    if s is None:
+        return ""
+    return unicodedata.normalize("NFC", str(s).strip())
+
+
+
+def find_member_internal(name: str = "", number: str = "", code: str = "", phone: str = "", special: str = ""):
     """
-    입력 문장에서 DB 시트의 회원명을 탐색하여 반환
-    - 여러 명이 매칭되면 긴 이름 우선 반환
-    - 없으면 None
+    DB 시트에서 회원 검색
     """
-    if not text:
-        return None
-
-    sheet = get_member_sheet()
-    member_names = sheet.col_values(1)[1:]  # 첫 행은 헤더 제외
-
-    # 긴 이름부터 매칭되도록 정렬 (예: '김철수' > '김')
-    member_names = sorted([n.strip() for n in member_names if n], key=len, reverse=True)
-
-    for name in member_names:
-        if name in text:
-            return name
-    return None
-
-
-def find_member_internal(name: str = "", number: str = "", code: str = "", phone: str = "", special: str = "") -> list[dict]:
-    """
-    회원명 / 회원번호 / 코드 / 휴대폰번호 / 특수번호 기반 단순 검색
-    - name: 부분일치 허용 (소문자 비교)
-    - number: 정확히 일치 (회원번호, 5~8자리 숫자)
-    - code: 정확히 일치 (대소문자 무시)
-    - phone: 정확히 일치 (010 시작, 10~11자리, 하이픈 허용)
-    - special: 특수번호 정확히 일치
-    """
-    sheet = get_member_sheet()
-    records = sheet.get_all_records()
-
+    rows = get_rows_from_sheet("DB")
     results = []
-    seen = set()  # ✅ 중복 제거용
 
-    # 입력값 전처리
-    name = (name or "").strip().lower()
-    number = (number or "").strip()
-    code = (code or "").strip().lower()
-    phone = (phone or "").strip()
-    special = (special or "").strip().lower()
+    # 검색 조건 정규화
+    name = normalize_text(name)
+    number = normalize_text(number)
+    code = normalize_text(code)
+    phone = normalize_text(phone)
+    special = normalize_text(special)
 
-    for row in records:
-        member_name = str(row.get("회원명", "")).strip().lower()
-        member_number = str(row.get("회원번호", "")).strip()
-        member_code = str(row.get("코드", "")).strip().lower()
-        member_phone = str(row.get("휴대폰번호", "")).strip()
-        member_special = str(row.get("특수번호", "")).strip().lower()
+    for row in rows:
+        row_name = normalize_text(row.get("회원명", ""))
+        row_number = normalize_text(row.get("회원번호", ""))
+        row_code = normalize_text(row.get("코드", ""))
+        row_phone = normalize_text(row.get("휴대폰번호", ""))
+        row_special = normalize_text(row.get("특수번호", ""))
 
-        matched = False
-
-        # ✅ 회원명 부분 일치
-        if name and name in member_name:
-            matched = True
-        # ✅ 회원번호 정확 일치 (5~8자리)
-        elif number and re.fullmatch(r"\d{5,8}", number) and number == member_number:
-            matched = True
-        # ✅ 코드 정확 일치
-        elif code and code == member_code:
-            matched = True
-        # ✅ 휴대폰번호 정확 일치
-        elif phone and re.fullmatch(r"(010-\d{3,4}-\d{4}|010\d{7,8})", phone) and phone == member_phone:
-            matched = True
-        # ✅ 특수번호 정확 일치
-        elif special and special == member_special:
-            matched = True
-
-        if matched:
-            key = f"{member_name}:{member_number}:{member_code}:{member_phone}:{member_special}"
-            if key not in seen:   # ✅ 중복 방지
-                results.append(row)
-                seen.add(key)
+        if (
+            (name and row_name == name) or
+            (number and row_number == number) or
+            (code and row_code == code) or
+            (phone and row_phone == phone) or
+            (special and row_special == special)
+        ):
+            results.append(row)
 
     return results
+
 
 
 

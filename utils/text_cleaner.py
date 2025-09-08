@@ -99,3 +99,19 @@ def build_member_query(user_input: str) -> dict:
     return {"query": query}
 
 
+
+
+def normalize_code_query(text: str) -> str:
+    """
+    코드 검색용 query 정규화
+    - 코드a, 코드 A, 코드: b, 코드 :C, 코드aa → 코드A, 코드B, 코드C, 코드AA
+    """
+    if not text:
+        return ""
+    match = re.search(r"코드\s*[:：]?\s*([a-zA-Z]+)", text, re.IGNORECASE)
+    if match:
+        return f"코드{match.group(1).upper()}"
+    return text.strip()
+
+
+

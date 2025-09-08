@@ -16,7 +16,12 @@ if not logger.handlers:  # ✅ 중복 방지
     formatter = logging.Formatter("[%(asctime)s] %(levelname)s in %(module)s: %(message)s")
     handler.setFormatter(formatter)
     logger.addHandler(handler)
-    
+
+from utils.sheets import get_member_sheet
+
+
+
+
 
 # ---------------------------------------------------------
 # 1. 쿼리 정규화
@@ -345,8 +350,30 @@ def search_member(query: str) -> Dict:
 
 
 
+# ==============================
+# 회원명 텍스트 탐색 (보정용)
+# ==============================
+def find_member_in_text(text: str) -> str | None:
+    """
+    입력 문장에서 DB 시트의 회원명을 탐색하여 반환
+    - 여러 명이 매칭되면 긴 이름 우선 반환
+    - 없으면 None
+    """
+    if not text:
+        return None
 
-# ====================
+    sheet = get_member_sheet()
+    member_names = sheet.col_values(1)[1:]  # 첫 행은 헤더 제외
+
+    # 긴 이름부터 매칭되도록 정렬 (예: '김철수' > '김')
+    member_names = sorted([n.strip() for n in member_names if n], key=len, reverse=True)
+
+    for name in member_names:
+        if name in text:
+            return name
+    return None
+
+
 
 
 
