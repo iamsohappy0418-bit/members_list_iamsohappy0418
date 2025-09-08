@@ -13,38 +13,35 @@
       "get": {
         "summary": "홈 (Health Check)",
         "description": "서버 정상 실행 여부 확인",
+        "operationId": "getHealthCheck",
         "responses": {
-          "200": {
-            "description": "Flask 서버 실행 메시지"
-          }
+          "200": { "description": "Flask 서버 실행 메시지" }
         }
       }
     },
-
     "/debug_sheets": {
       "get": {
         "summary": "구글 시트 디버깅",
         "description": "현재 연결된 Google Sheets 목록과 특정 시트의 헤더 확인",
+        "operationId": "getDebugSheets",
         "parameters": [
           {
             "name": "sheet",
             "in": "query",
             "description": "조회할 시트명 (예: DB, 제품주문, 상담일지)",
-            "required": false,
             "schema": { "type": "string" }
           }
         ],
         "responses": {
-          "200": { "description": "시트 목록과 헤더 반환" },
-          "500": { "description": "에러 발생" }
+          "200": { "description": "시트 목록 또는 헤더 반환" }
         }
       }
     },
-
     "/member": {
       "post": {
-        "summary": "회원 관련 API (intent 기반 단일 라우트)",
-        "description": "회원 검색, 등록, 수정, 삭제를 intent 기반으로 처리합니다.",
+        "summary": "회원 관련 API",
+        "description": "회원 intent 기반 단일 라우트",
+        "operationId": "postMember",
         "requestBody": {
           "required": true,
           "content": {
@@ -52,49 +49,23 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "text": { "type": "string" },
-                  "query": { "type": "object" }
+                  "query": { "type": "string" }
                 }
               }
             }
           }
         },
         "responses": {
-          "200": { "description": "회원 처리 성공" },
+          "200": { "description": "회원 관련 처리 성공" },
           "400": { "description": "요청 오류" }
         }
       }
     },
-
-    "/memo": {
-      "post": {
-        "summary": "메모 관련 API (intent 기반 단일 라우트)",
-        "description": "상담일지, 개인메모, 활동일지 저장 및 검색",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "text": { "type": "string" },
-                  "query": { "type": "object" }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": { "description": "메모 처리 성공" },
-          "400": { "description": "요청 오류" }
-        }
-      }
-    },
-
     "/order": {
       "post": {
-        "summary": "주문 관련 API (intent 기반 단일 라우트)",
-        "description": "제품 주문 등록, 수정, 삭제, 조회를 intent 기반으로 처리합니다.",
+        "summary": "주문 관련 API",
+        "description": "제품 주문 intent 기반 단일 라우트",
+        "operationId": "postOrder",
         "requestBody": {
           "required": true,
           "content": {
@@ -102,8 +73,7 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "text": { "type": "string" },
-                  "query": { "type": "object" }
+                  "query": { "type": "string" }
                 }
               }
             }
@@ -115,11 +85,11 @@
         }
       }
     },
-
-    "/commission": {
+    "/memo": {
       "post": {
-        "summary": "후원수당 관련 API (intent 기반 단일 라우트)",
-        "description": "후원수당 등록, 조회, 수정, 삭제를 intent 기반으로 처리합니다.",
+        "summary": "메모 관련 API",
+        "description": "상담일지/개인메모 intent 기반 단일 라우트",
+        "operationId": "postMemo",
         "requestBody": {
           "required": true,
           "content": {
@@ -127,8 +97,31 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "text": { "type": "string" },
-                  "query": { "type": "object" }
+                  "query": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "메모 처리 성공" },
+          "400": { "description": "요청 오류" }
+        }
+      }
+    },
+    "/commission": {
+      "post": {
+        "summary": "후원수당 관련 API",
+        "description": "intent 기반 단일 라우트",
+        "operationId": "postCommission",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "text": { "type": "string" }
                 }
               }
             }
@@ -142,5 +135,3 @@
     }
   }
 }
-
-
