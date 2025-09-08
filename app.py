@@ -186,8 +186,8 @@ def openapi():
 # ai-plugin.json (manifest)
 @app.route("/.well-known/ai-plugin.json", methods=["GET"])
 def plugin_manifest():
-    # 현재 폴더 기준으로 ai-plugin.json 반환
-    return send_from_directory(os.getcwd(), "ai-plugin.json", mimetype="application/json")
+    return send_from_directory(".well-known", "ai-plugin.json", mimetype="application/json")
+
 
 # 로고
 @app.route("/logo.png", methods=["GET"])
