@@ -526,6 +526,7 @@ def memo_route():
 
         if isinstance(result, dict):
             return jsonify(result), result.get("http_status", 200)
+        
         if isinstance(result, list):
             return jsonify(result), 200
 
@@ -569,6 +570,7 @@ def order_route():
 
         if isinstance(result, dict):
             return jsonify(result), result.get("http_status", 200)
+        
         if isinstance(result, list):  # 조회 결과 같은 경우
             return jsonify(result), 200
 
@@ -625,6 +627,7 @@ def commission_route():
 
 
 
+# 장됨
 
 
 
