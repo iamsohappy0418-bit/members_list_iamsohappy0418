@@ -227,6 +227,10 @@ def guess_intent(text: str) -> str:
     if text.startswith("코드"):
         return "search_by_code_logic"
 
+    # 회원 조회 (단순 이름)
+    if re.fullmatch(r"[가-힣]{2,4}", text):   # 2~4자 한글 이름
+        return "find_member_logic"
+
     # ✅ 회원 등록
     if any(k in text for k in ["회원등록", "회원 추가", "회원가입"]):
         return "register_member_func"

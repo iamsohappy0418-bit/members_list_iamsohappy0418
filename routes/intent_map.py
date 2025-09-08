@@ -8,7 +8,7 @@ intent_map.py
 # --------------------------
 from .routes_member import (
     search_member_func, register_member_func,
-    update_member_func, save_member_func, delete_member_func,
+    update_member_func, save_member_func, delete_member_func,find_member_logic,search_by_code_logic,
 )
 
 # --------------------------
@@ -39,6 +39,8 @@ from .routes_commission import (
 INTENT_MAP = {
     # 회원
     "search_member": search_member_func,
+    "find_member_logic": find_member_logic,   # ✅ 추가 (단순 이름 검색 지원)
+    "search_by_code_logic": search_by_code_logic,
     "register_member": register_member_func,
     "update_member": update_member_func,
     "save_member": save_member_func,
