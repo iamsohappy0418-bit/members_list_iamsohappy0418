@@ -5,6 +5,7 @@ __pycache__/
 *.json
 !openapi.json
 !requirements.txt
+!ai-plugin.json
 credentials.json
 
 # service_account.json
