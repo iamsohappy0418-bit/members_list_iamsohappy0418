@@ -1,0 +1,238 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "title": "Members List API",
+    "version": "1.0.0",
+    "description": "회원 관리, 주문, 메모, 후원수당 API"
+  },
+  "servers": [
+    {
+      "url": "https://memberslist.onrender.com"
+    }
+  ],
+  "paths": {
+    "/guessIntent": {
+      "post": {
+        "summary": "입력 의도 추론",
+        "operationId": "guessIntent",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "text": { "type": "string" },
+                  "query": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "추론 결과" } }
+      }
+    },
+    "/searchMember": {
+      "post": {
+        "summary": "회원 검색",
+        "operationId": "searchMember",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "query": { "type": "string", "description": "검색 키워드" }
+                },
+                "required": ["query"]
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "검색 결과" } }
+      }
+    },
+    "/registerMember": {
+      "post": {
+        "summary": "회원 등록",
+        "operationId": "registerMember",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "회원명": { "type": "string" },
+                  "회원번호": { "type": "string" },
+                  "휴대폰번호": { "type": "string" },
+                  "요청문": { "type": "string" }
+                },
+                "required": ["회원명"]
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "등록 성공" } }
+      }
+    },
+    "/updateMember": {
+      "post": {
+        "summary": "회원 수정",
+        "operationId": "updateMember",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "요청문": { "type": "string" }
+                },
+                "required": ["요청문"]
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "수정 성공" } }
+      }
+    },
+    "/deleteMember": {
+      "post": {
+        "summary": "회원 삭제",
+        "operationId": "deleteMember",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "회원명": { "type": "string" }
+                },
+                "required": ["회원명"]
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "삭제 성공" } }
+      }
+    },
+    "/orderNL": {
+      "post": {
+        "summary": "주문 처리",
+        "operationId": "orderNL",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "text": { "type": "string" },
+                  "회원명": { "type": "string" },
+                  "제품명": { "type": "string" },
+                  "제품가격": { "type": "number" },
+                  "PV": { "type": "number" },
+                  "결재방법": { "type": "string" },
+                  "배송처": { "type": "string" },
+                  "주문일자": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "주문 결과" } }
+      }
+    },
+    "/orderUpload": {
+      "post": {
+        "summary": "이미지 주문 업로드",
+        "operationId": "orderUpload",
+        "responses": { "200": { "description": "업로드 성공" } }
+      }
+    },
+    "/memoSaveAuto": {
+      "post": {
+        "summary": "메모 저장 (자동 분기)",
+        "operationId": "memoSaveAuto",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "요청문": { "type": "string" },
+                  "일지종류": { "type": "string", "enum": ["상담일지","개인일지","활동일지"] },
+                  "회원명": { "type": "string" },
+                  "내용": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "저장 성공" } }
+      }
+    },
+    "/searchMemo": {
+      "post": {
+        "summary": "메모 검색",
+        "operationId": "searchMemo",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "keywords": { "type": "array", "items": { "type": "string" } },
+                  "mode": { "type": "string", "enum": ["개인","상담","활동","전체"] },
+                  "search_mode": { "type": "string", "enum": ["any","동시검색"] },
+                  "text": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "검색 결과" } }
+      }
+    },
+    "/commissionFindAuto": {
+      "post": {
+        "summary": "후원수당 조회",
+        "operationId": "commissionFindAuto",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "text": { "type": "string" },
+                  "회원명": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "조회 결과" } }
+      }
+    },
+    "/registerCommission": {
+      "post": {
+        "summary": "후원수당 등록",
+        "operationId": "registerCommission",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "회원명": { "type": "string" },
+                  "후원수당": { "type": "string" }
+                },
+                "required": ["회원명","후원수당"]
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "등록 성공" } }
+      }
+    }
+  }
+}
+
