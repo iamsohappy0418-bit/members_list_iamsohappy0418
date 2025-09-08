@@ -173,7 +173,7 @@ CORS(app)  # ← 추가
 
 
 
-
+from flask import send_from_directory
 
 # OpenAPI 스펙
 with open("openapi.json", "r", encoding="utf-8") as f:
@@ -183,10 +183,11 @@ with open("openapi.json", "r", encoding="utf-8") as f:
 def openapi():
     return jsonify(openapi_spec)
 
+
 # ai-plugin.json (manifest)
-@app.route("/.well-known/ai-plugin.json", methods=["GET"])
-def plugin_manifest():
-    return send_from_directory(".well-known", "ai-plugin.json", mimetype="application/json")
+@app.route('/.well-known/ai-plugin.json')
+def serve_ai_plugin():
+    return send_from_directory('.well-known', 'ai-plugin.json', mimetype='application/json')
 
 
 # 로고
