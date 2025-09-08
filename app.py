@@ -127,7 +127,7 @@ from utils.utils_search import fallback_natural_search
 from utils.sheets import get_rows_from_sheet
 
 from flask import g
-
+from flask import send_from_directory
 
 
 
@@ -170,9 +170,17 @@ MEMBERSLIST_API_URL = os.getenv("MEMBERSLIST_API_URL")
 app = Flask(__name__)
 CORS(app)  # ← 추가
 
+
+
+
+
+
 # 🔹 OpenAPI JSON 로드
 with open("openapi.json", "r", encoding="utf-8") as f:
     openapi_spec = json.load(f)
+
+
+
 
 @app.route("/openapi.json", methods=["GET"])
 def openapi():
@@ -188,6 +196,8 @@ def plugin_manifest():
 @app.route("/logo.png", methods=["GET"])
 def plugin_logo():
     return send_from_directory(".", "logo.png", mimetype="image/png")
+
+
 
 
 
