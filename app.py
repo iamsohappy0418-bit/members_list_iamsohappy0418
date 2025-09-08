@@ -170,6 +170,32 @@ MEMBERSLIST_API_URL = os.getenv("MEMBERSLIST_API_URL")
 app = Flask(__name__)
 CORS(app)  # ← 추가
 
+# 🔹 OpenAPI JSON 로드
+with open("openapi.json", "r", encoding="utf-8") as f:
+    openapi_spec = json.load(f)
+
+@app.route("/openapi.json", methods=["GET"])
+def openapi():
+    """OpenAPI spec 제공"""
+    return jsonify(openapi_spec)
+
+# 🔹 ai-plugin.json 서비스 (ChatGPT Plugin manifest)
+@app.route("/.well-known/ai-plugin.json", methods=["GET"])
+def plugin_manifest():
+    return send_from_directory(".", "ai-plugin.json", mimetype="application/json")
+
+# 🔹 플러그인 로고 서비스
+@app.route("/logo.png", methods=["GET"])
+def plugin_logo():
+    return send_from_directory(".", "logo.png", mimetype="image/png")
+
+
+
+
+
+
+
+
 # ✅ 확인용 출력 (선택)
 if os.getenv("DEBUG", "false").lower() == "true":
     print("✅ GOOGLE_SHEET_TITLE:", os.getenv("GOOGLE_SHEET_TITLE"))
@@ -546,31 +572,6 @@ def search_by_code_logic() -> dict:
     }
 
 
-def find_member_logic() -> dict:
-    """
-    회원 조회 함수 (g.query 기반)
-    """
-    query = g.query.get("query")
-    if not query:
-        return {"status": "error", "message": "회원 조회를 위한 query가 필요합니다."}
-
-    try:
-        if isinstance(query, dict):
-            results = find_member_internal(
-                name=query.get("회원명", ""),
-                number=query.get("회원번호", ""),
-                code=query.get("코드", ""),
-                phone=query.get("휴대폰번호", ""),
-                special=query.get("특수번호", "")
-            )
-        else:
-            results = find_member_internal(name=query)
-
-        return {"status": "success", "results": results}
-
-    except Exception as e:
-        return {"status": "error", "message": f"회원 조회 실패: {str(e)}"}
-
 
 
 # ======================================================================================
@@ -603,6 +604,129 @@ def find_member_logic() -> dict:
     
 
 
+# ======================================================================================
+# ✅ 회원 등록 (라우트)
+# ======================================================================================
+@app.route("/register_member", methods=["POST"])
+def register_member_route():
+    """
+    회원 등록 API
+    - 요청문 형식: "회원등록 이판주 12345678 010-2759-9001"
+    - 또는 JSON 형식: {"회원명": "이판주", "회원번호": "12345678", "휴대폰번호": "010-2759-9001"}
+    """
+    try:
+        # ✅ before_request에서 변환된 g.query 사용
+        query = g.query.get("query")
+        raw_text = g.query.get("raw_text")
+
+        name, number, phone = "", "", ""
+
+        # 1) 요청문 기반 파싱 (자연어 입력일 경우)
+        if raw_text and "회원등록" in raw_text:
+            parts = raw_text.split()
+            for part in parts:
+                if re.fullmatch(r"[가-힣]{2,4}", part):  # 이름
+                    name = part
+                elif re.fullmatch(r"\d{5,8}", part):   # 회원번호
+                    number = part
+                elif re.fullmatch(r"(010-\d{3,4}-\d{4}|\d{10,11})", part):  # 휴대폰
+                    phone = part
+
+        # 2) PC 입력 방식 (JSON으로 회원명, 회원번호, 휴대폰번호 직접 입력)
+        if isinstance(query, dict):
+            name = query.get("회원명", name).strip()
+            number = query.get("회원번호", number).strip()
+            phone = query.get("휴대폰번호", phone).strip()
+
+        if not name:
+            return jsonify({"error": "회원명은 필수 입력 항목입니다."}), 400
+
+        # ✅ 실제 회원 등록 처리
+        result = register_member_internal(name, number, phone)
+        return jsonify(result), 201
+
+    except ValueError as ve:
+        return jsonify({"error": str(ve)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+
+
+    
+
+
+# ======================================================================================
+# ✅ 회원 삭제 API
+# ======================================================================================
+@app.route('/delete_member', methods=['POST'])
+def delete_member_route():
+    """
+    회원 전체 삭제 API
+    📌 설명:
+    - 회원명을 기준으로 DB 시트에서 전체 행을 삭제합니다.
+    - before_request 에서 g.query 에 값이 세팅되어 있어야 함.
+    📥 입력(JSON 예시):
+    {
+      "회원명": "홍길동"
+    }
+    """
+    try:
+        query = g.query.get("query") if hasattr(g, "query") else None
+
+        # query가 dict일 경우 회원명 필드 확인
+        if isinstance(query, dict):
+            name = (query.get("회원명") or "").strip()
+        else:
+            name = (query or "").strip()
+
+        if not name:
+            return jsonify({"error": "회원명은 필수 입력 항목입니다."}), 400
+
+        result, status = delete_member_internal(name)
+        return jsonify(result), status
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+
+
+
+
+
+# ======================================================================================
+# ✅ 자연어 요청 회원 삭제 라우트
+# ======================================================================================
+@app.route('/delete_member_field_nl', methods=['POST'])
+def delete_member_field_nl():
+    """
+    회원 필드 삭제 API (자연어 기반)
+    📌 설명:
+    - 자연어 문장에서 특정 필드를 추출하여 해당 회원의 일부 필드를 삭제합니다.
+    - '회원명', '회원번호'는 삭제 불가 (삭제 요청 자체를 막음)
+    - '홍길동 삭제' → 전체 삭제 방지 (별도 API /delete_member 사용)
+
+    📥 입력(JSON 예시):
+    {
+      "요청문": "이판여 주소랑 휴대폰번호 삭제"
+    }
+    """
+    try:
+        req = request.get_json(force=True)
+        text = (req.get("요청문") or "").strip()
+
+        if not text:
+            return jsonify({"error": "요청문을 입력해야 합니다."}), 400
+
+        result, status = delete_member_field_nl_internal(text)
+        return jsonify(result), status
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 
 
@@ -747,129 +871,6 @@ def save_member():
 
 
 
-# ======================================================================================
-# ✅ 회원 등록 (라우트)
-# ======================================================================================
-@app.route("/register_member", methods=["POST"])
-def register_member_route():
-    """
-    회원 등록 API
-    - 요청문 형식: "회원등록 이판주 12345678 010-2759-9001"
-    - 또는 JSON 형식: {"회원명": "이판주", "회원번호": "12345678", "휴대폰번호": "010-2759-9001"}
-    """
-    try:
-        # ✅ before_request에서 변환된 g.query 사용
-        query = g.query.get("query")
-        raw_text = g.query.get("raw_text")
-
-        name, number, phone = "", "", ""
-
-        # 1) 요청문 기반 파싱 (자연어 입력일 경우)
-        if raw_text and "회원등록" in raw_text:
-            parts = raw_text.split()
-            for part in parts:
-                if re.fullmatch(r"[가-힣]{2,4}", part):  # 이름
-                    name = part
-                elif re.fullmatch(r"\d{5,8}", part):   # 회원번호
-                    number = part
-                elif re.fullmatch(r"(010-\d{3,4}-\d{4}|\d{10,11})", part):  # 휴대폰
-                    phone = part
-
-        # 2) PC 입력 방식 (JSON으로 회원명, 회원번호, 휴대폰번호 직접 입력)
-        if isinstance(query, dict):
-            name = query.get("회원명", name).strip()
-            number = query.get("회원번호", number).strip()
-            phone = query.get("휴대폰번호", phone).strip()
-
-        if not name:
-            return jsonify({"error": "회원명은 필수 입력 항목입니다."}), 400
-
-        # ✅ 실제 회원 등록 처리
-        result = register_member_internal(name, number, phone)
-        return jsonify(result), 201
-
-    except ValueError as ve:
-        return jsonify({"error": str(ve)}), 400
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-
-
-    
-
-
-# ======================================================================================
-# ✅ 회원 삭제 API
-# ======================================================================================
-@app.route('/delete_member', methods=['POST'])
-def delete_member_route():
-    """
-    회원 전체 삭제 API
-    📌 설명:
-    - 회원명을 기준으로 DB 시트에서 전체 행을 삭제합니다.
-    - before_request 에서 g.query 에 값이 세팅되어 있어야 함.
-    📥 입력(JSON 예시):
-    {
-      "회원명": "홍길동"
-    }
-    """
-    try:
-        query = g.query.get("query") if hasattr(g, "query") else None
-
-        # query가 dict일 경우 회원명 필드 확인
-        if isinstance(query, dict):
-            name = (query.get("회원명") or "").strip()
-        else:
-            name = (query or "").strip()
-
-        if not name:
-            return jsonify({"error": "회원명은 필수 입력 항목입니다."}), 400
-
-        result, status = delete_member_internal(name)
-        return jsonify(result), status
-
-    except Exception as e:
-        import traceback; traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
-
-
-
-
-
-
-
-# ======================================================================================
-# ✅ 자연어 요청 회원 삭제 라우트
-# ======================================================================================
-@app.route('/delete_member_field_nl', methods=['POST'])
-def delete_member_field_nl():
-    """
-    회원 필드 삭제 API (자연어 기반)
-    📌 설명:
-    - 자연어 문장에서 특정 필드를 추출하여 해당 회원의 일부 필드를 삭제합니다.
-    - '회원명', '회원번호'는 삭제 불가 (삭제 요청 자체를 막음)
-    - '홍길동 삭제' → 전체 삭제 방지 (별도 API /delete_member 사용)
-
-    📥 입력(JSON 예시):
-    {
-      "요청문": "이판여 주소랑 휴대폰번호 삭제"
-    }
-    """
-    try:
-        req = request.get_json(force=True)
-        text = (req.get("요청문") or "").strip()
-
-        if not text:
-            return jsonify({"error": "요청문을 입력해야 합니다."}), 400
-
-        result, status = delete_member_field_nl_internal(text)
-        return jsonify(result), status
-
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
 
 
 
@@ -2140,7 +2141,10 @@ def debug_routes_table():
 
 
 
-# 잘 작동함
+
+
+
+
 
 
 
