@@ -21,43 +21,49 @@ from utils.utils_search import find_member_in_text
 # ===============================================
 # ✅ 규칙 기반 자연어 파서
 # ===============================================
-def parse_order_text(text: str) -> dict:
-    result: Dict[str, Any] = {}
+def parse_order_text(text: str) -> Dict[str, Any]:
+    """
+    자연어 주문 문장을 intent + query 구조로 변환
+    예: "이수민 주문 노니 2개 카드 결제 서울 주소 오늘"
+    """
+    text = (text or "").strip()
+    query: Dict[str, Any] = {}
 
-    # 회원명 보정
+    # ✅ 회원명
     member = find_member_in_text(text)
-    if member:
-        result["회원명"] = member
-    else:
-        result["회원명"] = None   # 찾지 못하면 None
+    query["회원명"] = member if member else None
 
-    # 제품명 + 수량
-    prod_match = re.search(r"([\w가-힣]+)[\s]*(\d+)\s*개", text)
+    # ✅ 제품명 + 수량 (예: 노니 2개, 홍삼 3박스, 치약 1병)
+    prod_match = re.search(r"([\w가-힣]+)\s*(\d+)\s*(개|박스|병|포)?", text)
     if prod_match:
-        result["제품명"] = prod_match.group(1)
-        result["수량"] = int(prod_match.group(2))
+        query["제품명"] = prod_match.group(1)
+        query["수량"] = int(prod_match.group(2))
     else:
-        result["제품명"] = "제품"
-        result["수량"] = 1
+        query["제품명"] = "제품"
+        query["수량"] = 1
 
-    # 결제방법
+    # ✅ 결제방법
     if "카드" in text:
-        result["결제방법"] = "카드"
+        query["결제방법"] = "카드"
     elif "현금" in text:
-        result["결제방법"] = "현금"
-    elif "계좌" in text:
-        result["결제방법"] = "계좌이체"
+        query["결제방법"] = "현금"
+    elif "계좌" in text or "이체" in text:
+        query["결제방법"] = "계좌이체"
     else:
-        result["결제방법"] = "카드"
+        query["결제방법"] = "카드"
 
-    # 배송지
-    address_match = re.search(r"(?:주소|배송지)[:：]\s*(.+?)(\s|$)", text)
-    result["배송처"] = address_match.group(1).strip() if address_match else ""
+    # ✅ 배송처
+    # "주소: 서울", "배송지: 부산", "서울 주소" 같은 패턴 지원
+    address_match = re.search(r"(?:주소|배송지)[:：]?\s*([가-힣0-9\s]+)", text)
+    query["배송처"] = address_match.group(1).strip() if address_match else ""
 
-    # 주문일자
-    result["주문일자"] = process_order_date(text)
+    # ✅ 주문일자 (오늘/내일/어제/2025-09-11)
+    query["주문일자"] = process_order_date(text)
 
-    return result
+    return {
+        "intent": "order_auto",
+        "query": query
+    }
 
 
 # ===============================================
