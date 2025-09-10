@@ -19,6 +19,16 @@
         }
       }
     },
+    "/openapi.json": {
+      "get": {
+        "summary": "OpenAPI 스펙",
+        "description": "현재 API의 OpenAPI JSON 스펙 반환",
+        "operationId": "getOpenapiSpec",
+        "responses": {
+          "200": { "description": "OpenAPI JSON 스펙 반환" }
+        }
+      }
+    },
     "/debug_sheets": {
       "get": {
         "summary": "구글 시트 디버깅",
@@ -33,25 +43,51 @@
           }
         ],
         "responses": {
-          "200": { "description": "시트 목록 또는 헤더 반환" }
+          "200": { "description": "시트 목록 또는 헤더 반환" },
+          "500": { "description": "시트 조회 오류" }
+        }
+      }
+    },
+    "/postIntent": {
+      "post": {
+        "summary": "자연어 intent 처리",
+        "description": "자연어 입력을 intent와 query dict로 변환하여 실행",
+        "operationId": "postIntent",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/NLURequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "intent 처리 성공" },
+          "400": { "description": "요청 오류" }
+        }
+      }
+    },
+    "/guess_intent": {
+      "post": {
+        "summary": "intent 실행 게이트웨이",
+        "description": "nlu_to_pc_input에서 intent를 추출하고 INTENT_MAP을 통해 실행",
+        "operationId": "guessIntentEntry",
+        "responses": {
+          "200": { "description": "intent 실행 성공" },
+          "400": { "description": "지원하지 않는 intent" }
         }
       }
     },
     "/member": {
       "post": {
         "summary": "회원 관련 API",
-        "description": "회원 intent 기반 단일 라우트",
+        "description": "회원 intent 기반 단일 라우트 (조회/등록/수정/삭제)",
         "operationId": "postMember",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "query": { "type": "string" }
-                }
-              }
+              "schema": { "$ref": "#/components/schemas/MemberRequest" }
             }
           }
         },
@@ -67,15 +103,13 @@
         "description": "제품 주문 intent 기반 단일 라우트",
         "operationId": "postOrder",
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "query": { "type": "string" }
-                }
-              }
+              "schema": { "$ref": "#/components/schemas/OrderRequest" }
+            },
+            "multipart/form-data": {
+              "schema": { "$ref": "#/components/schemas/OrderFileUpload" }
             }
           }
         },
@@ -94,12 +128,7 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "query": { "type": "string" }
-                }
-              }
+              "schema": { "$ref": "#/components/schemas/MemoRequest" }
             }
           }
         },
@@ -112,18 +141,13 @@
     "/commission": {
       "post": {
         "summary": "후원수당 관련 API",
-        "description": "intent 기반 단일 라우트",
+        "description": "후원수당 intent 기반 단일 라우트",
         "operationId": "postCommission",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "text": { "type": "string" }
-                }
-              }
+              "schema": { "$ref": "#/components/schemas/CommissionRequest" }
             }
           }
         },
@@ -131,6 +155,91 @@
           "200": { "description": "후원수당 처리 성공" },
           "400": { "description": "요청 오류" }
         }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "NLURequest": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string" },
+          "query": { "type": "string" }
+        },
+        "minProperties": 1
+      },
+      "MemberRequest": {
+        "type": "object",
+        "oneOf": [
+          {
+            "properties": { "text": { "type": "string" } },
+            "required": ["text"]
+          },
+          {
+            "properties": {
+              "회원명": { "type": "string" },
+              "회원번호": { "type": "string" },
+              "휴대폰번호": { "type": "string" }
+            }
+          }
+        ]
+      },
+      "OrderRequest": {
+        "type": "object",
+        "oneOf": [
+          {
+            "properties": { "text": { "type": "string" } },
+            "required": ["text"]
+          },
+          {
+            "properties": {
+              "주문회원": { "type": "string" },
+              "상품": { "type": "string" },
+              "수량": { "type": "integer" },
+              "결제": { "type": "string" },
+              "date": { "type": "string", "format": "date" }
+            }
+          }
+        ]
+      },
+      "OrderFileUpload": {
+        "type": "object",
+        "properties": {
+          "file": { "type": "string", "format": "binary" }
+        }
+      },
+      "MemoRequest": {
+        "type": "object",
+        "oneOf": [
+          {
+            "properties": { "text": { "type": "string" } },
+            "required": ["text"]
+          },
+          {
+            "properties": {
+              "회원명": { "type": "string" },
+              "내용": { "type": "string" },
+              "일지종류": { "type": "string" }
+            },
+            "required": ["회원명", "내용", "일지종류"]
+          }
+        ]
+      },
+      "CommissionRequest": {
+        "type": "object",
+        "oneOf": [
+          {
+            "properties": { "text": { "type": "string" } },
+            "required": ["text"]
+          },
+          {
+            "properties": {
+              "회원명": { "type": "string" },
+              "기간": { "type": "string" },
+              "월": { "type": "string" }
+            }
+          }
+        ]
       }
     }
   }

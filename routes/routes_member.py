@@ -1,181 +1,236 @@
 import re
+from flask import g, request
 
-# ===== service (비즈니스 로직) =====
-from service.service_member import (
-    find_member_internal,            # 회원 조회 (DB 시트 검색)
-    register_member_internal,        # 회원 등록 (DB 추가)
-    update_member_internal,          # 회원 수정 (DB 갱신)
-    delete_member_internal,          # 회원 삭제 (DB 행 제거)
-    delete_member_field_nl_internal, # 회원 필드 삭제 (자연어 기반)
-    process_member_query,            # 회원 질의 처리 (NLU 결과 해석)
-)
-
-# ===== app (전역 함수) =====
-from utils.text_cleaner import normalize_code_query   # 코드 검색 정규화
-
-# ===== utils =====
+# 시트/서비스/파서 의존성들 (하단 함수에서 사용)
 from utils.sheets import (
     get_rows_from_sheet,   # DB 시트 행 조회
     get_member_sheet,      # 회원 시트 접근
-    safe_update_cell       # 안전한 셀 수정
+    safe_update_cell,      # 안전한 셀 수정
 )
-from parser import parse_registration   # 회원 등록 파서
+from service.service_member import (
+    register_member_internal,        # 회원 등록
+    update_member_internal,          # 회원 수정
+    delete_member_internal,          # 회원 삭제
+    delete_member_field_nl_internal, # 회원 필드 삭제 (자연어)
+)
+from parser import parse_registration  # 회원 등록/수정 파서
 
-# ===== flask =====
-from flask import g, request
+SHEET_NAME_DB = "DB"  # 매직스트링 방지
 
 
 
 
 
+# ────────────────────────────────────────────────────────────────────
+# 공통 헬퍼
+# ────────────────────────────────────────────────────────────────────
+def _norm(s):
+    return (s or "").strip()
+
+def _digits(s):
+    return re.sub(r"\D", "", s or "")
+
+def _compact_row(r: dict) -> dict:
+    out = {
+        "회원명": r.get("회원명", ""),
+        "회원번호": r.get("회원번호", ""),
+        "코드": r.get("코드", ""),
+        "휴대폰번호": r.get("휴대폰번호", ""),
+    }
+    if "특수번호" in r:
+        out["특수번호"] = r.get("특수번호", "")
+    return out
+
+def _line(d: dict) -> str:
+    parts = []
+    if d.get("회원번호"): parts.append(f"회원번호: {d['회원번호']}")
+    if d.get("특수번호"): parts.append(f"특수번호: {d['특수번호']}")
+    if d.get("휴대폰번호"): parts.append(f"휴대폰: {d['휴대폰번호']}")
+    return f"{d.get('회원명','')} ({', '.join(parts)})" if parts else d.get("회원명","")
 
 
+# ────────────────────────────────────────────────────────────────────
+# 1) 허브: search_member_func  ← nlu_to_pc_input 가 intent='search_member'로 보냄
+# ────────────────────────────────────────────────────────────────────
 def search_member_func():
     """
     회원 검색 허브 함수 (라우트 아님)
-    - g.query["query"] 값이 '코드...' → search_by_code_logic() 호출
-    - 그 외 → find_member_logic() 호출
+    - g.query["query"] 가 str이면 '코드...' 여부로 분기
+    - 그 외는 find_member_logic()로 처리
+    - 결과에 http_status 추가(성공:200 / 실패:400)
     """
     try:
-        query = g.query.get("query")
-
+        query = g.query.get("query", None)
         if query is None:
-            return {
-                "status": "error",
-                "message": "검색어(query)가 필요합니다.",
-                "http_status": 400
-            }
+            return {"status": "error", "message": "검색어(query)가 필요합니다.", "http_status": 400}
 
-        # 문자열일 경우만 strip()
-        if isinstance(query, str):
-            query = query.strip()
-
-        # raw_text는 사람이 입력한 원본 → dict는 str로 변환
+        # 원본 텍스트 저장
         g.query["raw_text"] = query if isinstance(query, str) else str(query)
 
-        # 코드 검색 (문자열일 때만 체크)
+        # '코드...' 패턴이면 코드 검색으로
         if isinstance(query, str) and (query.startswith("코드") or query.lower().startswith("code")):
             result = search_by_code_logic()
         else:
             result = find_member_logic()
 
-        http_status = 200 if result.get("status") == "success" else 400
+        http_status = 200 if isinstance(result, dict) and result.get("status") == "success" else 400
         return {**result, "http_status": http_status}
 
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return {
-            "status": "error",
-            "message": str(e),
-            "http_status": 500
-        }
+        import traceback; traceback.print_exc()
+        return {"status": "error", "message": str(e), "http_status": 500}
 
 
-# ======================================================================================
-# ✅ 회원 조회 (코드 검색 전용)
-# ======================================================================================
-def search_by_code_logic() -> dict:
+# ────────────────────────────────────────────────────────────────────
+# 2) 코드 검색: '코드a', '코드 A', 'code:B' 등
+# ────────────────────────────────────────────────────────────────────
+def search_by_code_logic():
     """
-    코드 기반 회원 검색 함수 (항상 리스트 형식 출력)
-    - before_request 에서 g.query, g.raw_text 사용
+    코드 컬럼 정확 일치 (대소문자 무시)로 검색
+    허용 입력: '코드a', '코드 A', '코드:A', 'code b', 'code: c'
     """
-    query = g.query.get("query")
-    raw_text = g.query.get("raw_text")
-
-    if not query:
-        return {"status": "error", "message": "검색어(query)를 입력하세요.", "http_status": 400}
-
-    # ✅ 코드 정규화
-    query = normalize_code_query(query)
-
-    if not query.startswith("코드"):
-        return {"status": "error", "message": "올바른 코드 검색어가 아닙니다. 예: 코드a", "http_status": 400}
-
-    code_value = query.replace("코드", "").strip().upper()
-
     try:
-        # ✅ DB 조회
+        raw = g.query.get("query") or ""
+        text = str(raw).strip()
+
+        print("=== ENTER search_by_code_logic ===")
+        print("raw from g.query:", g.query.get("query"))
+
+
+        # ✅ 한글/영문 '코드' + 선택적 콜론 + 공백 허용
+        m = re.match(r"^(?:코드|code)\s*:?\s*([A-Za-z0-9]+)$", text, re.IGNORECASE)
+        
+        print("=== DEBUG REGEX ===", "text:", text, "m:", m)
+
+        if not m:
+            return {
+                "status": "error",
+                "message": f"올바른 코드 검색어가 아닙니다. 입력값={text}, 예: 코드a, 코드 A, code:B",
+                "http_status": 400
+            }
+
+        code_value = m.group(1).upper()
         rows = get_rows_from_sheet("DB")
-        results = [
-            row for row in rows
-            if str(row.get("코드", "")).strip().upper() == code_value
-        ]
 
-        # ✅ 결과 포맷
-        formatted_results = []
-        for r in results:
-            member_name = str(r.get("회원명", "")).strip()
-            member_number = str(r.get("회원번호", "")).strip()
-            special_number = str(r.get("특수번호", "")).strip()
-            phone = str(r.get("휴대폰번호", "")).strip()
+        # ✅ 코드 컬럼 필터링
+        matched = [r for r in rows if str(r.get("코드", "")).strip().upper() == code_value]
+       
+       
+        # 🔽 여기서 디버깅 로그 찍기
+        print("=== DEBUG search_by_code_logic ===")
+        print("raw:", raw)
+        print("text:", text)
+        print("code_value:", code_value)
+        print("rows 첫 3개:", rows[:3])
+        print("matched 개수:", len(matched))       
+             
+       
+        matched.sort(key=lambda r: str(r.get("회원명", "")).strip())
 
-            parts = []
-            if member_number:
-                parts.append(f"회원번호: {member_number}")
-            if special_number:
-                parts.append(f"특수번호: {special_number}")
-            if phone:
-                parts.append(f"휴대폰: {phone}")
+        print("=== DEBUG REGEX ===", "text:", text, "m:", m)   # 👈 여기에 추가
 
-            formatted = f"{member_name} ({', '.join(parts)})" if parts else member_name
-            formatted_results.append((member_name, formatted))
 
-        formatted_results.sort(key=lambda x: x[0])
+
+        results = [_compact_row(r) for r in matched]
+        display = [_line(d) for d in results]
 
         return {
             "status": "success",
-            "query": raw_text,
+            "intent": "search_by_code",
             "code": code_value,
-            "count": len(formatted_results),
-            "results": [f for _, f in formatted_results],
-            "http_status": 200
+            "count": len(results),
+            "results": results,
+            "display": display,
+            "raw_text": raw
         }
 
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return {
-            "status": "error",
-            "message": f"코드 검색 실패: {str(e)}",
-            "http_status": 500
-        }
+        import traceback; traceback.print_exc()
+        return {"status": "error", "message": str(e), "http_status": 500}
 
-
-# ======================================================================================
-# ✅ 회원 조회 (JSON 전용)
-# ======================================================================================
-def find_member_logic() -> dict:
+    
+# ────────────────────────────────────────────────────────────────────
+# 3) 일반 검색: 이름/회원번호/휴대폰/특수번호/부분매칭
+# ────────────────────────────────────────────────────────────────────
+def find_member_logic():
     """
-    회원 조회 함수 (g.query 기반)
+    일반 회원 검색
+    - g.query["query"] 가 dict 또는 str
+      dict 예: {"회원명":"홍길동"} / {"회원번호":"123456"} / {"휴대폰번호":"010-1234-5678"} / {"특수번호":"A1"}
+      str  예: "홍길동" / "1234567" / "01012345678" / "특수번호 A1"
     """
-    query = g.query.get("query")
-    if not query:
-        return {"status": "error", "message": "회원 조회를 위한 query가 필요합니다.", "http_status": 400}
-
     try:
-        if isinstance(query, dict):
-            results = find_member_internal(
-                name=query.get("회원명", ""),
-                number=query.get("회원번호", ""),
-                code=query.get("코드", ""),
-                phone=query.get("휴대폰번호", ""),
-                special=query.get("특수번호", "")
-            )
+        q = g.query.get("query")
+        rows = get_rows_from_sheet("DB")  # list[dict]
+
+        # 1) 검색 키 추출
+        f = {"회원명": None, "회원번호": None, "휴대폰번호": None, "특수번호": None}
+
+        if isinstance(q, dict):
+            for k in list(f.keys()):
+                if k in q: f[k] = _norm(q.get(k))
+
+
+
+        elif isinstance(q, str):
+            text = _norm(q)
+
+            if text.startswith("코드") or text.lower().startswith("code"):
+                g.query["query"] = text
+                return search_by_code_logic()
+
+
+
+
+            if re.fullmatch(r"\d{5,8}", text):
+                f["회원번호"] = text
+            elif re.fullmatch(r"(010-\d{3,4}-\d{4}|010\d{7,8})", text):
+                f["휴대폰번호"] = text
+            else:
+                m = re.search(r"특수번호\s*([a-zA-Z0-9!@#]+)", text)
+                if m:
+                    f["특수번호"] = m.group(1)
+                elif re.fullmatch(r"[가-힣]{2,4}", text):
+                    f["회원명"] = text
+                else:
+                    # 폴백: 회원명 부분 매칭
+                    f["회원명"] = text
         else:
-            results = find_member_internal(name=query)
+            return {"status": "error", "message": "지원하지 않는 query 형식입니다.", "http_status": 400}
 
-        return {"status": "success", "results": results, "http_status": 200}
+        # 2) 필터링
+        def match_row(r: dict) -> bool:
+            if f["회원명"]:
+                if f["회원명"] not in _norm(r.get("회원명", "")):
+                    return False
+            if f["회원번호"]:
+                if _norm(r.get("회원번호", "")) != f["회원번호"]:
+                    return False
+            if f["휴대폰번호"]:
+                if _digits(r.get("휴대폰번호", "")) != _digits(f["휴대폰번호"]):
+                    return False
+            if f["특수번호"] is not None:
+                if _norm(r.get("특수번호", "")) != f["특수번호"]:
+                    return False
+            return True
 
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
+        matched = [r for r in rows if match_row(r)]
+        matched.sort(key=lambda r: _norm(r.get("회원명", "")))
+
+        results = [_compact_row(r) for r in matched]
+        display = [_line(d) for d in results]
+
         return {
-            "status": "error",
-            "message": f"회원 조회 실패: {str(e)}",
-            "http_status": 500
+            "status": "success",
+            "intent": "search_member",
+            "count": len(results),
+            "results": results,
+            "display": display
         }
 
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return {"status": "error", "message": str(e), "http_status": 500}
 
 
 

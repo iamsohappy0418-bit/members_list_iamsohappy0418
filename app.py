@@ -18,26 +18,13 @@ from config import (
     SHEET_MAP,
 )
 
-# ===== routes (intent 기반 공식 API만 import) =====
-from routes import (
-    # 회원
-    search_member_func, register_member_func,
-    update_member_func, save_member_func, delete_member_func,
-
-    # 메모
-    memo_save_auto_func, add_counseling_func,
-    search_memo_func, search_memo_from_text_func, memo_find_auto_func,
-
-    # 주문
-    order_auto_func, order_upload_func,
-    order_nl_func, save_order_proxy_func,
-
-    # 후원수당
-    commission_find_auto_func, find_commission_func, search_commission_by_nl_func,
-
-    # intent 맵
-    INTENT_MAP, MEMBER_INTENTS, MEMO_INTENTS,
-    ORDER_INTENTS, COMMISSION_INTENTS,
+# ===== intents (마스터 및 그룹 맵만 임포트) =====
+from routes.intent_map import (
+    INTENT_MAP,
+    MEMBER_INTENTS,
+    MEMO_INTENTS,
+    ORDER_INTENTS,
+    COMMISSION_INTENTS,
 )
 
 # ===== utils (공식 API만 import) =====
@@ -87,15 +74,10 @@ from service import (
     find_commission, register_commission, update_commission, delete_commission,
 )
 
-
-
-
-
-
-
-
-
 from utils.text_cleaner import normalize_code_query
+
+
+
 
 
 
@@ -204,73 +186,6 @@ def debug_sheets():
         return jsonify({"error": str(e)}), 500
     
 
-
-
-
-# ======================================================================================
-# ======================================================================================
-# ======================================================================================
-# ======================================================================================
-# ======================================================================================
-# ======================================================================================
-# ===============================================
-# intent 추측 함수 (반환값 = 실행 함수 이름과 동일)
-# ===============================================
-def guess_intent(text: str) -> str:
-    """
-    자연어 문장에서 intent 추측
-    반환값은 실제 실행 함수 이름과 동일하게 반환
-    """
-    text = (text or "").strip().lower()
-
-    # ✅ 코드 검색
-    if text.startswith("코드"):
-        return "search_by_code_logic"
-
-    # 회원 조회 (단순 이름)
-    if re.fullmatch(r"[가-힣]{2,4}", text):   # 2~4자 한글 이름
-        return "find_member_logic"
-
-    # ✅ 회원 등록
-    if any(k in text for k in ["회원등록", "회원 추가", "회원가입"]):
-        return "register_member_func"
-
-    # ✅ 회원 수정
-    if any(k in text for k in ["회원 수정", "변경", "바꿔", "업데이트"]):
-        return "update_member_func"
-
-    # ✅ 회원 저장 (업서트)
-    if any(k in text for k in ["저장", "업서트", "등록 또는 수정"]):
-        return "save_member_func"
-
-    # ✅ 회원 삭제 (전체 행 삭제)
-    if any(k in text for k in ["회원 삭제", "삭제", "지워", "제거"]):
-        return "delete_member_func"
-
-    # ✅ 회원 필드 삭제 (특정 항목 제거)
-    if any(k in text for k in ["필드 삭제", "항목 삭제", "정보 삭제"]):
-        return "delete_member_field_nl_func"
-
-    # ✅ 회원 조회 (일반 이름/검색/조회/알려줘)
-    if "회원" in text or any(k in text for k in ["조회", "검색", "알려줘"]):
-        return "find_member_logic"
-
-    # ✅ 주문
-    if "주문" in text:
-        return "order_auto_func"
-
-    # ✅ 메모/일지
-    if any(k in text for k in ["상담일지", "개인일지", "활동일지", "메모"]):
-        return "memo_save_auto_func"
-
-    # ✅ 후원수당
-    if any(k in text for k in ["후원수당", "수당"]):
-        return "commission_find_auto_func"
-
-    return "unknown"
-
-
-# ======================================================================================
 # ======================================================================================
 # ======================================================================================
 # ======================================================================================
@@ -280,45 +195,49 @@ def guess_intent(text: str) -> str:
 @app.before_request
 def preprocess_input():
     """
-    모든 요청에서 text/query 입력을 정규화해서 g.query 에 저장
-    g.query 구조:
-    {
-        "query": 변환된 쿼리,
-        "intent": 추정된 의도,
-        "raw_text": 원본 입력
-    }
+    1. /postIntent → 그대로 통과
+    2. 다른 라우트에 자연어 입력이 들어오면 → /postIntent 로 우회
     """
-    data = {}
+    if request.endpoint == "post_intent":
+        return None
+
     if request.method == "POST":
         data = request.get_json(silent=True) or {}
-    elif request.method == "GET":
-        data = request.args.to_dict()
 
-    raw_text = None
-    query, intent = None, None
+        # ✅ 문자열만 안전하게 뽑아서 strip
+        q = data.get("text")
+        if not isinstance(q, str):
+            q = data.get("query") if isinstance(data.get("query"), str) else ""
+        q = q.strip()
 
-    # ✅ PC 입력 (query 직접 전달)
-    if "query" in data:
-        query = data.get("query")
-        if isinstance(query, str):
-            raw_text = query.strip()
-        else:
-            raw_text = json.dumps(query, ensure_ascii=False)
-        intent = None  # PC 입력은 intent 추정 안 함
+        # 구조화된 JSON이 아닌 경우 → 자연어로 간주
+        if q and not ("회원명" in data or "회원번호" in data):
+            return post_intent()  # ✅ postIntent로 강제 우회
 
-    # ✅ 자연어 입력 (NLU 처리)
-    elif "text" in data and data["text"].strip():
-        raw_text = data["text"].strip()
-        parsed = nlu_to_pc_input(raw_text)
-        query = parsed.get("query")
-        intent = parsed.get("intent")
+    return None
 
-    g.query = {
-        "query": query,
-        "intent": intent,
-        "raw_text": raw_text
-    }
 
+# --------------------------------------------------------------------
+# postIntent (자연어 입력 전용 공식 진입점)
+# --------------------------------------------------------------------
+@app.route("/postIntent", methods=["POST"])
+def post_intent():
+    data = request.get_json(silent=True) or {}
+
+    # ✅ 문자열만 안전하게 추출
+    text = data.get("text")
+    if not isinstance(text, str):
+        text = data.get("query") if isinstance(data.get("query"), str) else ""
+    text = text.strip()
+
+    if not text:
+        return jsonify({"status": "error", "message": "❌ text 필드가 필요합니다."}), 400
+
+    # ✅ 자연어 → { intent, query } 변환 (search_member 중심)
+    g.query = nlu_to_pc_input(text)
+
+    # ✅ 표준 실행기로 위임 (INTENT_MAP 사용)
+    return guess_intent_entry()
 
 
 # ======================================================================================
@@ -336,104 +255,70 @@ def nlu_to_pc_input(text: str) -> dict:
     # ✅ 코드 검색 (코드a, 코드 b, 코드AA, 코드ABC ...)
     normalized = normalize_code_query(text)
     if normalized.startswith("코드"):
-        return {"query": normalized, "intent": "search_member"}
+        return {"query": {"코드": normalized}, "intent": "search_member"}
 
     # ✅ 회원명 검색 ("홍길동 회원", "회원 홍길동")
     match = re.search(r"([가-힣]{2,4})\s*회원", text)
     if match:
         return {"query": {"회원명": match.group(1)}, "intent": "search_member"}
 
-    # ✅ 회원번호 (12345, 1234567, 98765432) - 숫자 5~8자리
+    # ✅ 회원번호 (12345 ~ 8자리)
     match = re.fullmatch(r"\d{5,8}", text)
     if match:
-        return {"query": f"{{ 회원번호: '{match.group(0)}' }}", "intent": "search_member"}
+        return {"query": {"회원번호": match.group(0)}, "intent": "search_member"}
 
-    # ✅ 휴대폰번호 (01012345678, 010-1234-5678) - 010으로 시작, 10~11자리 / 하이픈 허용
+    # ✅ 휴대폰번호 (010 시작, 하이픈 허용)
     match = re.fullmatch(r"(010-\d{3,4}-\d{4}|010\d{7,8})", text)
     if match:
-        return {"query": f"{{ 휴대폰번호: '{match.group(0)}' }}", "intent": "search_member"}
+        return {"query": {"휴대폰번호": match.group(0)}, "intent": "search_member"}
 
-    # ✅ 특수번호 검색 ("특수번호 77", "특수번호 ABC123", "특수번호 @12")
+    # ✅ 특수번호 검색 ("특수번호 abc123")
     match = re.search(r"특수번호\s*([a-zA-Z0-9!@#]+)", text)
     if match:
-        return {"query": f"{{ 특수번호: '{match.group(1)}' }}", "intent": "search_member"}
+        return {"query": {"특수번호": match.group(1)}, "intent": "search_member"}
 
     # ✅ 단순 이름 입력 ("홍길동", "이수민")
     if re.fullmatch(r"[가-힣]{2,4}", text):
-        return {"query": f"{{ 회원명: '{text}' }}", "intent": "search_member"}
+        return {"query": {"회원명": text}, "intent": "search_member"}
 
-    # ✅ 회원 등록 ("회원등록 홍길동 12345678 010-1234-5678")
+    # ✅ 회원 등록
     if text.startswith("회원등록"):
-        return {"query": text, "intent": "register_member"}
+        return {"query": {"raw_text": text}, "intent": "register_member"}
 
-    # ✅ 회원 삭제 ("홍길동 삭제", "회원 홍길동 삭제")
+    # ✅ 회원 삭제
     if "삭제" in text:
         match = re.search(r"([가-힣]{2,4}).*삭제", text)
         if match:
             return {"query": {"회원명": match.group(1)}, "intent": "delete_member"}
-        return {"query": text, "intent": "delete_member"}
+        return {"query": {"raw_text": text}, "intent": "delete_member"}
 
-    # ✅ 회원 저장 (업서트) ("회원 저장 홍길동", "회원 저장 정보 수정")
-    if text.startswith("회원 저장") or "회원 저장" in text:
-        return {"query": text, "intent": "save_member"}
+    # ✅ 회원 저장 (업서트)
+    if "회원 저장" in text or "저장" in text:
+        return {"query": {"raw_text": text}, "intent": "save_member"}
 
-
-
-
-
-
-
-    # ✅ 주문 ("홍길동 주문", "이수민 제품 주문", "주문 내역")
+    # ✅ 주문
     if "주문" in text:
         match = re.search(r"([가-힣]{2,4}).*주문", text)
         if match:
-            return {"query": f"{{ 주문회원: '{match.group(1)}' }}", "intent": "order_find_auto"}
-        return {"query": "{ 주문: true }", "intent": "order"}
+            return {"query": {"주문회원": match.group(1)}, "intent": "order_auto"}
+        return {"query": {"주문": True}, "intent": "order_auto"}
 
-
-
-
-
-
-
-
-    # ✅ 메모/일지 자동 분기 ("홍길동 상담일지 저장 오늘 미팅 진행", "활동일지 등록")
+    # ✅ 메모/일지 자동 분기
     if any(k in text for k in ["메모", "상담일지", "개인일지", "활동일지"]):
-        return {"query": "{ 메모: true }", "intent": "memo_find_auto"}
-
-    # ✅ 메모 저장 (자연어 업서트) ("이태수 메모 저장 운동 시작", "기록 저장 헬스 다녀옴")
-    if any(k in text for k in ["메모 저장", "일지 저장", "기록 저장"]):
-        return {"query": {"요청문": text}, "intent": "memo_save_auto"}
-
-    # ✅ 메모 저장 (JSON 전용) ("상담일지 저장 고객과 통화", "개인일지 저장 PT 수업")
-    if any(k in text for k in ["상담일지", "개인일지", "활동일지"]) and "저장" in text:
-        return {"query": {"요청문": text}, "intent": "add_counseling"}
-
-    # ✅ 메모 검색 (자연어) ("홍길동 상담일지 검색", "메모 검색 운동 관련")
-    if "메모 검색" in text or "일지 검색" in text:
-        return {"query": {"text": text}, "intent": "search_memo_from_text"}
-
-    # ✅ 메모 검색 (JSON 기반) ("메모 조회", "일지 조회", "검색")
-    if "메모 조회" in text or "일지 조회" in text or "검색" in text:
-        return {"query": {"text": text}, "intent": "search_memo"}
-
-    # ✅ 메모 자동 분기 (저장/검색 혼합 문장) ("홍길동 메모 저장 운동 시작", "홍길동 상담일지 검색")
-    if any(k in text for k in ["메모", "상담일지", "개인일지", "활동일지"]):
+        # 세부 상황에 따라 intent 분기
+        if "저장" in text:
+            return {"query": {"요청문": text}, "intent": "memo_save_auto"}
+        if "검색" in text:
+            return {"query": {"text": text}, "intent": "search_memo_from_text"}
         return {"query": {"text": text}, "intent": "memo_find_auto"}
 
+    # ✅ 후원수당
+    if "후원수당" in text or "수당" in text:
+        return {"query": {"raw_text": text}, "intent": "commission_find_auto"}
 
+    # ✅ 기본 반환
+    return {"query": {"raw_text": text}, "intent": "unknown"}
 
-
-
-
-
-
-    # ✅ 후원수당 조회 ("후원수당 조회", "홍길동 후원수당", "8월 후원수당")
-    if "후원수당" in text:
-        return {"query": "{ 후원수당: true }", "intent": "commission_find_auto"}
-
-    # ✅ 기본 반환 (그대로 넘김)
-    return {"query": text, "intent": "unknown"}
 
 
 
@@ -444,12 +329,11 @@ def nlu_to_pc_input(text: str) -> dict:
 
 @app.route("/guess_intent", methods=["POST"])
 def guess_intent_entry():
-    """자연어 intent 추출 후 해당 함수 실행"""
     if not g.query or not g.query.get("intent"):
         return jsonify({"status": "error", "message": "❌ intent를 추출할 수 없습니다."}), 400
 
     intent = g.query["intent"]
-    func = INTENT_MAP.get(intent)
+    func = INTENT_MAP.get(intent)   # ✅ 마스터 맵에서 실행 함수 가져옴
 
     if not func:
         return jsonify({"status": "error", "message": f"❌ 처리할 수 없는 intent입니다. (intent={intent})"}), 400
@@ -460,6 +344,23 @@ def guess_intent_entry():
     if isinstance(result, list):
         return jsonify(result), 200
     return jsonify({"status": "error", "message": "알 수 없는 반환 형식"}), 500
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -488,8 +389,19 @@ def member_route():
     """
     회원 관련 API (intent 기반 단일 라우트)
     - before_request 에서 g.query["intent"] 세팅됨
+    - 자연어 입력이면 postIntent로 우회
     """
-    intent = g.query.get("intent")
+    # g.query 안전 체크
+    data = getattr(g, "query", {}) or {}
+    intent = data.get("intent")
+
+    # ✅ intent가 없을 때만 자연어 판별 로직 적용
+    if not intent:
+        if isinstance(data.get("query"), str) and not any(k in data for k in ("회원명", "회원번호")):
+            # 자연어면 postIntent로 강제 우회
+            return post_intent()
+
+    # 그 외에는 기존 intent 흐름 사용
     func = MEMBER_INTENTS.get(intent)
 
     if not func:
@@ -514,9 +426,17 @@ def memo_route():
     메모 관련 API (저장/검색 자동 분기)
     - before_request 에서 g.query 세팅됨
     - g.query["intent"] 값에 따라 실행
+    - 자연어 입력이면 postIntent로 우회
     """
     try:
-        intent = g.query.get("intent")
+        data = getattr(g, "query", {}) or {}
+
+        # query가 문자열이고 JSON 구조화 키(회원명/내용 등)가 없으면 → 자연어로 간주
+        if isinstance(data.get("query"), str) and not any(k in data for k in ("회원명", "내용", "일지종류")):
+            return post_intent()  # ✅ 자연어라면 postIntent로 우회
+
+        # intent 기반 실행
+        intent = data.get("intent")
         func = MEMO_INTENTS.get(intent)
 
         if not func:
@@ -530,7 +450,6 @@ def memo_route():
 
         if isinstance(result, dict):
             return jsonify(result), result.get("http_status", 200)
-        
         if isinstance(result, list):
             return jsonify(result), 200
 
@@ -543,6 +462,7 @@ def memo_route():
             "status": "error",
             "message": f"메모 처리 중 오류 발생: {str(e)}"
         }), 500
+
     
 
 
@@ -558,9 +478,37 @@ def order_route():
     """
     주문 관련 API (intent 기반 단일 엔드포인트)
     - before_request 에서 g.query["intent"] 세팅됨
+    - 자연어 입력이면 postIntent로 우회
+    - 파일 업로드면 order_upload 바로 처리
     """
     try:
-        intent = g.query.get("intent") if hasattr(g, "query") else None
+        # 0) 파일 업로드 우선 처리 (multipart/form-data)
+        if hasattr(request, "files") and request.files:
+            # g.query 보정 (없을 수 있음)
+            if not hasattr(g, "query") or not isinstance(g.query, dict):
+                g.query = {"intent": "order_upload", "query": {}}
+            result = ORDER_INTENTS.get("order_upload", order_upload_func)()
+            if isinstance(result, dict):
+                return jsonify(result), result.get("http_status", 200)
+            if isinstance(result, list):
+                return jsonify(result), 200
+            return jsonify({"status": "error", "message": "알 수 없는 반환 형식"}), 500
+
+        data = getattr(g, "query", {}) or {}
+        q = data.get("query")
+
+        # 1) 자연어 판단: 문자열이거나, dict여도 text/요청문/주문문/내용만 있는 경우
+        if isinstance(q, str):
+            return post_intent()  # ✅ 자연어면 게이트웨이로 우회
+        if isinstance(q, dict):
+            # 구조화 주문 키 후보
+            structured_keys = {"items", "상품", "order", "주문", "주문회원", "member", "수량", "결제", "date"}
+            text_like_keys = {"text", "요청문", "주문문", "내용"}
+            if any(k in q for k in text_like_keys) and not any(k in q for k in structured_keys):
+                return post_intent()  # ✅ 텍스트성 dict → 자연어로 간주하여 우회
+
+        # 2) intent 기반 실행
+        intent = data.get("intent")
         func = ORDER_INTENTS.get(intent)
 
         if not func:
@@ -574,7 +522,6 @@ def order_route():
 
         if isinstance(result, dict):
             return jsonify(result), result.get("http_status", 200)
-        
         if isinstance(result, list):  # 조회 결과 같은 경우
             return jsonify(result), 200
 
@@ -592,19 +539,37 @@ def order_route():
 
 
 
+
 # ======================================================================================
 # ✅ 후원수당 조회 (자동 분기) intent 기반 단일 라우트
 # ======================================================================================
-
-
 @app.route("/commission", methods=["POST"])
 def commission_route():
     """
     후원수당 관련 API (intent 기반 단일 엔드포인트)
-    - before_request 에서 g.query["intent"] 세팅됨
+    - before_request 에서 g.query 세팅됨
+    - 자연어 입력이면 postIntent로 우회
     """
     try:
-        intent = g.query.get("intent") if hasattr(g, "query") else None
+        data = getattr(g, "query", {}) or {}
+        q = data.get("query")
+
+        # 1) 자연어 판별: 문자열이거나, dict여도 텍스트성 키만 있고 구조화 키가 없으면 자연어
+        if isinstance(q, str):
+            return post_intent()
+
+        if isinstance(q, dict):
+            text_like_keys = {"text", "요청문", "조건", "criteria"}
+            structured_keys = {
+                "회원", "회원명", "member",
+                "월", "연도", "기간", "시작일", "종료일", "from", "to",
+                "지급일", "구분", "유형"
+            }
+            if any(k in q for k in text_like_keys) and not any(k in q for k in structured_keys):
+                return post_intent()
+
+        # 2) intent 기반 실행
+        intent = data.get("intent")
         func = COMMISSION_INTENTS.get(intent)
 
         if not func:
@@ -618,6 +583,8 @@ def commission_route():
 
         if isinstance(result, dict):
             return jsonify(result), result.get("http_status", 200)
+        if isinstance(result, list):
+            return jsonify(result), 200
 
         return jsonify({"status": "error", "message": "알 수 없는 반환 형식"}), 500
 
@@ -630,8 +597,6 @@ def commission_route():
         }), 500
 
 
-
-# 장됨
 
 
 

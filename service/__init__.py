@@ -52,6 +52,9 @@ from .service_commission import (
     delete_commission,
 )
 
+from utils.utils_memo import handle_search_memo
+
+
 # --------------------------------------------------
 # 공식 공개 API 목록 (__all__)
 # --------------------------------------------------
@@ -88,6 +91,8 @@ __all__ = [
     "register_commission",
     "update_commission",
     "delete_commission",
+
+    "handle_search_memo"
 ]
 
 

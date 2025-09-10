@@ -1,158 +1,167 @@
-import io
-import traceback
-import requests
-
-# ===== flask =====
-from flask import request, jsonify, g
-
-# ===== utils =====
-from utils.utils_openai import (
-    extract_order_from_uploaded_image,   # 업로드된 이미지 → 주문 JSON 추출
-)
-from parser.parse_order import (
-    parse_order_text,        # 자연어 주문 파서 (조회/삭제용)
-    parse_order_text_rule,   # 자연어 주문 파서 (저장 규칙 기반)
-)
-
-# ===== service =====
-from service.service_order import (
-    addOrders,            # 주문 리스트 시트 저장
-    save_order_to_sheet,  # 단일 주문 시트 저장
-    find_order,           # 주문 조회
-    register_order,       # 주문 등록
-    update_order,         # 주문 수정
-    delete_order,         # 주문 삭제
-    clean_order_data,     # 주문 데이터 정리
-)
-
-# ===== config =====
-from config import MEMBERSLIST_API_URL
+import re
+from flask import g, request
+from parser import parse_order_from_text
+from utils import extract_order_from_uploaded_image
+from service import handle_product_order, save_order_to_sheet
 
 
 
 
+def _norm(s): 
+    return (s or "").strip()
 
-# --------------------------
-# 실제 처리 함수들
-# --------------------------
+def _ok(res) -> bool:
+    return bool(res) and (res.get("status") in {"ok", "success", True})
+
+def _get_text_from_g() -> str:
+    """
+    g.query에서 주문 자연어 텍스트를 안전하게 추출
+    우선순위: raw_text > query(str) > query(dict)["text","요청문","주문문","내용"]
+    """
+    if not hasattr(g, "query") or not isinstance(g.query, dict):
+        return ""
+    rt = g.query.get("raw_text")
+    if isinstance(rt, str) and rt.strip():
+        return rt.strip()
+    q = g.query.get("query")
+    if isinstance(q, str) and q.strip():
+        return q.strip()
+    if isinstance(q, dict):
+        for k in ("text", "요청문", "주문문", "내용"):
+            v = q.get(k)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+    return ""
+
+def _is_structured_order(obj: dict) -> bool:
+    """
+    dict가 '구조화 주문'인지 판별.
+    최소 기준: 대표 키가 하나 이상 존재.
+    """
+    if not isinstance(obj, dict):
+        return False
+    candidate_keys = {
+        "주문", "주문회원", "items", "상품", "order", "member", "date", "결제", "수량"
+    }
+    return any(k in obj for k in candidate_keys)
+
+
 def order_auto_func():
-    data = request.get_json(silent=True) or {}
-    if "image" in request.files or "image_url" in request.form or "image_url" in data:
-        return order_upload_func()
-    if "text" in data or "query" in data or "회원명" in data or "제품명" in data:
-        return order_nl_func()
-    return {"status": "error", "message": "❌ 입력이 올바르지 않습니다.", "http_status": 400}
-
-
-def order_upload_func():
-    user_agent = request.headers.get("User-Agent", "").lower()
-    is_pc = ("windows" in user_agent) or ("macintosh" in user_agent)
-
-    member_name = request.form.get("회원명")
-    image_file = request.files.get("image")
-    image_url = request.form.get("image_url")
-
-    if not member_name:
-        return {"status": "error", "message": "회원명이 필요합니다.", "http_status": 400}
-
+    """
+    주문 허브 (라우트 아님)
+    - 파일 업로드가 있으면 → order_upload_func
+    - query 가 dict이고 '구조화 주문'이면 → save_order_proxy_func
+    - 그 외(문자열/텍스트 dict 등) → order_nl_func
+    """
     try:
-        if image_file:
-            image_bytes = io.BytesIO(image_file.read())
-        elif image_url:
-            resp = requests.get(image_url)
-            if resp.status_code != 200:
-                return {"status": "error", "message": "이미지 다운로드 실패", "http_status": 400}
-            image_bytes = io.BytesIO(resp.content)
-        else:
-            return {"status": "error", "message": "이미지가 필요합니다.", "http_status": 400}
+        q = g.query.get("query") if hasattr(g, "query") and isinstance(g.query, dict) else None
+        # 원본 텍스트 저장 (문자열/딕셔너리 모두 문자열화)
+        raw = _get_text_from_g()
+        if raw:
+            g.query["raw_text"] = raw
+        elif isinstance(q, (dict, str)):
+            g.query["raw_text"] = q if isinstance(q, str) else str(q)
 
-        order_data = extract_order_from_uploaded_image(image_bytes)
+        # 1) 파일 업로드 우선
+        if hasattr(request, "files") and request.files:
+            return order_upload_func()
 
-        if isinstance(order_data, dict) and "orders" in order_data:
-            orders_list = order_data["orders"]
-        elif isinstance(order_data, dict):
-            orders_list = [order_data]
-        elif isinstance(order_data, list):
-            orders_list = order_data
-        else:
-            return {"status": "error", "message": "GPT 응답이 올바르지 않음", "raw": order_data, "http_status": 500}
+        # 2) 구조화 JSON → 저장 프록시
+        if isinstance(q, dict) and _is_structured_order(q):
+            return save_order_proxy_func()
 
-        for o in orders_list:
-            o["결재방법"] = ""
-            o["수령확인"] = ""
+        # 3) 자연어 텍스트 → NLU 기반
+        return order_nl_func()
 
-        addOrders({"회원명": member_name, "orders": orders_list})
-
-        return {
-            "status": "success",
-            "mode": "PC" if is_pc else "iPad",
-            "회원명": member_name,
-            "추출된_JSON": orders_list
-        }
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        import traceback; traceback.print_exc()
         return {"status": "error", "message": str(e), "http_status": 500}
 
 
 def order_nl_func():
-    data = request.get_json(silent=True) or {}
-
-    if "text" in data:
-        text = data["text"].strip()
-        if "저장" in text:
-            parsed = parse_order_text_rule(text)
-            save_order_to_sheet(parsed)
-            return {"status": "success", "action": "저장", "parsed": parsed}
-        elif "조회" in text:
-            parsed = parse_order_text(text)
-            matched = find_order(parsed.get("회원명"), parsed.get("제품명"))
-            return [clean_order_data(o) for o in matched]
-        elif "삭제" in text:
-            parsed = parse_order_text(text)
-            member, product = parsed.get("회원명"), parsed.get("제품명")
-            if member and product:
-                delete_order(member, product)
-                return {"status": "success", "message": f"{member}님의 {product} 주문 삭제"}
-            return {"status": "error", "message": "삭제할 주문을 찾을 수 없습니다.", "http_status": 404}
-
-    member = data.get("회원명", "").strip()
-    product = data.get("제품명", "").strip()
-
-    if "수정목록" in data:
-        update_order(member, product, data["수정목록"])
-        return {"status": "success", "action": "수정"}
-
-    if all(k in data for k in ["회원명", "제품명", "제품가격"]):
-        register_order(
-            member, product,
-            data.get("제품가격", ""), data.get("PV", ""),
-            data.get("결재방법", ""), data.get("배송처", ""),
-            data.get("주문일자", "")
-        )
-        return {"status": "success", "action": "등록"}
-
-    if member or product:
-        matched = find_order(member, product)
-        if not matched:
-            return {"status": "error", "message": "해당 주문 없음", "http_status": 404}
-        return [clean_order_data(o) for o in matched]
-
-    return {"status": "error", "message": "유효한 요청 아님", "http_status": 400}
-
-
-def save_order_proxy_func():
+    """
+    자연어 주문 처리
+    - g.query["raw_text"] 기준으로 파싱 → 서비스 저장
+    """
     try:
-        payload = request.get_json(force=True)
-        resp = requests.post(MEMBERSLIST_API_URL, json=payload)
-        resp.raise_for_status()
-        return resp.json()
+        text = _get_text_from_g()
+        if not text:
+            return {"status": "error", "message": "주문 문장이 비어 있습니다.", "http_status": 400}
+
+        parsed = parse_order_from_text(text)  # 프로젝트 파서 사용
+        if not parsed:
+            return {"status": "error", "message": "주문을 해석할 수 없습니다.", "http_status": 400}
+
+        # 저장 로직 (서비스 계층)
+        res = handle_product_order(parsed) if callable(handle_product_order) else save_order_to_sheet(parsed)
+        return {
+            "status": "success" if _ok(res) else "error",
+            "intent": "order_auto",  # 허브에서 호출되므로 intent는 order_auto로 유지
+            "parsed": parsed,
+            "http_status": 200 if _ok(res) else 400
+        }
+
     except Exception as e:
+        import traceback; traceback.print_exc()
         return {"status": "error", "message": str(e), "http_status": 500}
 
 
+def order_upload_func():
+    """
+    이미지/스캔된 주문서 업로드 처리
+    - request.files에서 첫 파일 인식 → OCR/LLM 파싱 → 저장
+    """
+    try:
+        if not (hasattr(request, "files") and request.files):
+            return {"status": "error", "message": "업로드된 파일이 없습니다.", "http_status": 400}
+
+        # 가장 첫 파일 기준
+        file_key = next(iter(request.files.keys()))
+        file = request.files[file_key]
+
+        parsed = extract_order_from_uploaded_image(file)
+        if not parsed:
+            return {"status": "error", "message": "업로드된 이미지에서 주문을 추출하지 못했습니다.", "http_status": 400}
+
+        res = handle_product_order(parsed) if callable(handle_product_order) else save_order_to_sheet(parsed)
+        return {
+            "status": "success" if _ok(res) else "error",
+            "intent": "order_upload",
+            "parsed": parsed,
+            "http_status": 200 if _ok(res) else 400
+        }
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return {"status": "error", "message": str(e), "http_status": 500}
 
 
+def save_order_proxy_func():
+    """
+    구조화 JSON 주문 저장
+    - g.query["query"] 가 dict라고 가정
+    - 일부 필드명 표준화(회원명/주문회원, member 등) 후 저장
+    """
+    try:
+        payload = g.query.get("query") if hasattr(g, "query") and isinstance(g.query, dict) else None
+        if not isinstance(payload, dict):
+            return {"status": "error", "message": "주문 JSON(payload)이 필요합니다.", "http_status": 400}
 
+        # 필드 표준화(있을 때만)
+        if "회원명" in payload and "주문회원" not in payload:
+            payload["주문회원"] = payload["회원명"]
+        if "member" in payload and "주문회원" not in payload:
+            payload["주문회원"] = payload["member"]
+
+        res = handle_product_order(payload) if callable(handle_product_order) else save_order_to_sheet(payload)
+        return {
+            "status": "success" if _ok(res) else "error",
+            "intent": "save_order_proxy",
+            "http_status": 200 if _ok(res) else 400
+        }
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return {"status": "error", "message": str(e), "http_status": 500}
 
 
