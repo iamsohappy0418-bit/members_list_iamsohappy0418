@@ -51,6 +51,7 @@ def parse_memo(text: str) -> dict:
     if normalized.startswith("전체메모") and "검색" in text:
         keyword = text.split("검색", 1)[1].strip()
         result.update({
+            "회원명": "전체",  
             "일지종류": "전체",
             "keywords": [keyword] if keyword else []
         })

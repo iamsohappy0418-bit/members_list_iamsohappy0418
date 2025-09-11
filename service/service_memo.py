@@ -199,7 +199,7 @@ def search_memo_core(sheet_name, keywords, search_mode="any", member_name=None,
         print(f"  clean_keywords={clean_keywords}")
         print("=" * 60)
 
-        if member_name and member != member_name:
+        if member_name and member_name != "전체" and member != member_name:
             continue
 
         if date_str:
