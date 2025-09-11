@@ -276,18 +276,79 @@ def register_member_internal(name: str, number: str = "", phone: str = ""):
 
 
 
-def update_member_internal(요청문):
+def update_member_internal(요청문, 회원명=None, 필드=None, 값=None):
+    """
+    회원 수정 서비스 함수
+    - 요청문 기반 자유 수정 + 필드 기반 직접 수정 지원
+    """
     try:
-        # ... 파싱 및 시트 업데이트 로직 ...
+        ws = get_member_sheet()
+
+        # 우선 회원명 확인
+        if not 회원명:
+            # 요청문 안에서 추출 시도
+            m = re.match(r"([가-힣]{2,4})", 요청문)
+            if m:
+                회원명 = m.group(1)
+
+        if not 회원명:
+            return {
+                "status": "error",
+                "message": "❌ 회원명을 찾을 수 없습니다.",
+                "http_status": 400
+            }
+
+        # 1️⃣ 필드 & 값이 명확히 지정된 경우 → 해당 컬럼 업데이트
+        if 필드 and 값:
+            headers = ws.row_values(1)
+            if 필드 not in headers:
+                return {
+                    "status": "error",
+                    "message": f"❌ 시트에 '{필드}' 컬럼이 없습니다.",
+                    "http_status": 400
+                }
+
+            # 회원명으로 행 찾기
+            rows = ws.get_all_records()
+            target_row = None
+            for idx, row in enumerate(rows, start=2):  # 헤더는 1행
+                if row.get("회원명") == 회원명:
+                    target_row = idx
+                    break
+
+            if not target_row:
+                return {
+                    "status": "error",
+                    "message": f"❌ '{회원명}' 회원을 찾을 수 없습니다.",
+                    "http_status": 404
+                }
+
+            col_idx = headers.index(필드) + 1
+            ws.update_cell(target_row, col_idx, 값)
+
+            return {
+                "status": "success",
+                "message": f"✅ {회원명}님의 {필드}가 '{값}'으로 수정되었습니다.",
+                "http_status": 200
+            }
+
+        # 2️⃣ 일반 요청문 처리 (필드 추출 못한 경우 → fallback)
+        # TODO: NLP 파싱/규칙 기반 업데이트 로직 추가 가능
         return {
             "status": "success",
-            "message": f"요청 처리 완료: {요청문}"
+            "message": f"요청 처리 완료: {요청문}",
+            "http_status": 200
         }
+
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return {
             "status": "error",
-            "message": str(e)
+            "message": str(e),
+            "http_status": 500
         }
+
 
 
 

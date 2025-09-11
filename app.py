@@ -287,35 +287,46 @@ def nlu_to_pc_input(text: str) -> dict:
 
 
 
+
     # 회원 수정
     if any(word in text for word in ["수정", "회원수정", "회원변경", "회원 수정", "회원 변경"]):
         # 케이스1: "<이름> 수정 <내용>"
         m = re.match(r"^([가-힣]{2,4})\s*(?:회원)?\s*(?:수정|변경)\s+(.+)$", text)
         if m:
-            return {
-                "intent": "update_member",
-                "query": {
-                    "회원명": m.group(1).strip(),
-                    "요청문": m.group(2).strip()
-                }
-            }
+            member_name, request_text = m.groups()
+            field = None
+            value = None
+
+            # 필드 추출 패턴
+            if "휴대폰" in request_text or "전화" in request_text:
+                field = "휴대폰번호"
+                value = re.sub(r"[^0-9\-]", "", request_text)  # 숫자/하이픈만 추출
+            elif "주소" in request_text:
+                field = "주소"
+                value = request_text.replace("주소", "").strip()
+            elif "이메일" in request_text or "메일" in request_text:
+                field = "이메일"
+                value = re.search(r"[\w\.-]+@[\w\.-]+", request_text)
+                if value:
+                    value = value.group(0)
+
+            query = {"회원명": member_name, "요청문": request_text}
+            if field and value:
+                query.update({"필드": field, "값": value})
+
+            return {"intent": "update_member", "query": query}
 
         # 케이스2: "회원수정 <이름> <내용>"
         m = re.match(r"^(?:회원)?\s*(?:수정|변경)\s*([가-힣]{2,4})\s+(.+)$", text)
         if m:
-            return {
-                "intent": "update_member",
-                "query": {
-                    "회원명": m.group(1).strip(),
-                    "요청문": m.group(2).strip()
-                }
-            }
+            member_name, request_text = m.groups()
+            return {"intent": "update_member", "query": {"회원명": member_name, "요청문": request_text}}
 
         # fallback
-        return {
-            "intent": "update_member",
-            "query": {"raw_text": text}
-        }
+        return {"intent": "update_member", "query": {"raw_text": text}}
+
+
+
 
 
 
