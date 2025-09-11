@@ -271,6 +271,69 @@ def nlu_to_pc_input(text: str) -> dict:
     # -------------------------------
     # 회원 관련
     # -------------------------------
+
+    # 회원 등록
+    if any(word in text for word in ["회원등록", "회원추가", "회원 등록", "회원 추가"]):
+        # 앞쪽에 이름이 붙은 경우 처리: "이판주 회원등록"
+        m = re.search(r"([가-힣]{2,4})\s*(회원등록|회원추가|회원 등록|회원 추가)", text)
+        if m:
+            return {"intent": "register_member", "query": {"회원명": m.group(1)}}
+        # 뒷쪽에 이름이 오는 경우 처리: "회원등록 이판주"
+        m = re.search(r"(회원등록|회원추가|회원 등록|회원 추가)\s*([가-힣]{2,4})", text)
+        if m:
+            return {"intent": "register_member", "query": {"회원명": m.group(2)}}
+        # 회원명 못 찾으면 raw_text만 전달
+        return {"intent": "register_member", "query": {"raw_text": text}}
+
+
+
+    # 회원 수정
+    if any(word in text for word in ["수정", "회원수정", "회원변경", "회원 수정", "회원 변경"]):
+        # 케이스1: "<이름> 수정 <내용>"
+        m = re.match(r"^([가-힣]{2,4})\s*(?:회원)?\s*(?:수정|변경)\s+(.+)$", text)
+        if m:
+            return {
+                "intent": "update_member",
+                "query": {
+                    "회원명": m.group(1).strip(),
+                    "요청문": m.group(2).strip()
+                }
+            }
+
+        # 케이스2: "회원수정 <이름> <내용>"
+        m = re.match(r"^(?:회원)?\s*(?:수정|변경)\s*([가-힣]{2,4})\s+(.+)$", text)
+        if m:
+            return {
+                "intent": "update_member",
+                "query": {
+                    "회원명": m.group(1).strip(),
+                    "요청문": m.group(2).strip()
+                }
+            }
+
+        # fallback
+        return {
+            "intent": "update_member",
+            "query": {"raw_text": text}
+        }
+
+
+
+    # 회원 삭제
+    if any(word in text for word in ["회원삭제", "회원제거", "회원 삭제", "회원 제거"]):
+        m = re.search(r"([가-힣]{2,4}).*(삭제|제거)", text)
+        if m:
+            return {"intent": "delete_member", "query": {"회원명": m.group(1)}}
+        return {"intent": "delete_member", "query": {"raw_text": text}}
+    
+    # 회원 조회 / 검색 (동의어 지원)
+    if any(word in text for word in ["회원조회", "회원검색", "검색회원", "조회회원", "회원 조회", "회원 검색", "검색 회원", "조회 회원"]):
+    # 이름까지 붙었는지 확인
+        m = re.search(r"(회원\s*(검색|조회)\s*)([가-힣]{2,4})", text)
+        if m:
+            return {"intent": "search_member", "query": {"회원명": m.group(3)}}
+        return {"intent": "search_member", "query": {"raw_text": text}}
+    
     # 코드 검색 (코드a, 코드 b, 코드AA...)
     normalized = normalize_code_query(text)
     if normalized.startswith("코드"):
@@ -280,14 +343,6 @@ def nlu_to_pc_input(text: str) -> dict:
     m = re.search(r"([가-힣]{2,4})\s*회원", text)
     if m:
         return {"intent": "search_member", "query": {"회원명": m.group(1)}}
-
-    # 회원 조회 / 검색 (동의어 지원)
-    if any(word in text for word in ["회원 조회", "회원 검색", "검색 회원", "조회 회원"]):
-        # 이름까지 붙었는지 확인
-        m = re.search(r"(회원\s*(검색|조회)\s*)([가-힣]{2,4})", text)
-        if m:
-            return {"intent": "search_member", "query": {"회원명": m.group(3)}}
-        return {"intent": "search_member", "query": {"raw_text": text}}
 
     # 회원번호
     if re.fullmatch(r"\d{5,8}", text):
@@ -306,32 +361,19 @@ def nlu_to_pc_input(text: str) -> dict:
     if re.fullmatch(r"[가-힣]{2,4}", text):
         return {"intent": "search_member", "query": {"회원명": text}}
 
-    # 회원 등록
-    if any(word in text for word in ["회원 등록", "회원 추가"]):
-        return {"intent": "add_member", "query": {"raw_text": text}}
 
-    # 회원 수정
-    if any(word in text for word in ["회원 수정", "회원 변경"]):
-        return {"intent": "update_member", "query": {"raw_text": text}}
-
-    # 회원 삭제
-    if any(word in text for word in ["회원 삭제", "회원 제거"]):
-        m = re.search(r"([가-힣]{2,4}).*(삭제|제거)", text)
-        if m:
-            return {"intent": "delete_member", "query": {"회원명": m.group(1)}}
-        return {"intent": "delete_member", "query": {"raw_text": text}}
 
     # -------------------------------
     # 메모/일지 관련
     # -------------------------------
     # 메모 저장
-    m = re.match(r"(\S+)\s+(개인일지|상담일지|활동일지)\s+저장\s+(.+)", text)
+    m = re.match(r"(\S+)\s+(개인일지|상담일지|활동일지|개인 일지|상담 일지|활동 일지)\s+저장\s+(.+)", text)
     if m:
         member_name, diary_type, content = m.groups()
         return {"intent": "memo_add", "query": {"회원명": member_name, "일지종류": diary_type, "내용": content}}
 
     # 메모 검색 (회원명 + 일지종류 + 검색)
-    m = re.match(r"(\S+)\s+(개인일지|상담일지|활동일지)\s+(검색|조회)\s+(.+)", text)
+    m = re.match(r"(\S+)\s+(개인일지|상담일지|활동일지|개인 일지|상담 일지|활동 일지)\s+(검색|조회)\s+(.+)", text)
     if m:
         member_name, diary_type, _, keyword = m.groups()
         return {"intent": "memo_search", "query": {"회원명": member_name, "일지종류": diary_type, "검색어": keyword}}

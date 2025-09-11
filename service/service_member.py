@@ -279,15 +279,15 @@ def register_member_internal(name: str, number: str = "", phone: str = ""):
 def update_member_internal(요청문):
     try:
         # ... 파싱 및 시트 업데이트 로직 ...
-        return jsonify({
+        return {
             "status": "success",
             "message": f"요청 처리 완료: {요청문}"
-        }), 200
+        }
     except Exception as e:
-        return jsonify({
+        return {
             "status": "error",
             "message": str(e)
-        }), 500
+        }
 
 
 
