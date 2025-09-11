@@ -263,6 +263,8 @@ def post_intent():
 def nlu_to_pc_input(text: str) -> dict:
     """
     자연어 입력을 intent + query(dict) 구조로 변환
+    - guess_intent + nlu_to_pc_input 통합
+    - 회원 / 메모 / 주문 intent 지원
     """
     text = (text or "").strip()
 
@@ -272,40 +274,52 @@ def nlu_to_pc_input(text: str) -> dict:
     # 코드 검색 (코드a, 코드 b, 코드AA...)
     normalized = normalize_code_query(text)
     if normalized.startswith("코드"):
-        return {"query": {"코드": normalized}, "intent": "search_member"}
+        return {"intent": "search_member", "query": {"코드": normalized}}
 
-    # 회원명 검색 ("홍길동 회원")
+    # 회원명 + "회원"
     m = re.search(r"([가-힣]{2,4})\s*회원", text)
     if m:
-        return {"query": {"회원명": m.group(1)}, "intent": "search_member"}
+        return {"intent": "search_member", "query": {"회원명": m.group(1)}}
 
-    # 회원번호 (5~8자리 숫자)
+    # 회원 조회 / 검색 (동의어 지원)
+    if any(word in text for word in ["회원 조회", "회원 검색", "검색 회원", "조회 회원"]):
+        # 이름까지 붙었는지 확인
+        m = re.search(r"(회원\s*(검색|조회)\s*)([가-힣]{2,4})", text)
+        if m:
+            return {"intent": "search_member", "query": {"회원명": m.group(3)}}
+        return {"intent": "search_member", "query": {"raw_text": text}}
+
+    # 회원번호
     if re.fullmatch(r"\d{5,8}", text):
-        return {"query": {"회원번호": text}, "intent": "search_member"}
+        return {"intent": "search_member", "query": {"회원번호": text}}
 
     # 휴대폰번호
     if re.fullmatch(r"(010-\d{3,4}-\d{4}|010\d{7,8})", text):
-        return {"query": {"휴대폰번호": text}, "intent": "search_member"}
+        return {"intent": "search_member", "query": {"휴대폰번호": text}}
 
     # 특수번호
     m = re.search(r"특수번호\s*([a-zA-Z0-9!@#]+)", text)
     if m:
-        return {"query": {"특수번호": m.group(1)}, "intent": "search_member"}
+        return {"intent": "search_member", "query": {"특수번호": m.group(1)}}
 
     # 단순 이름
     if re.fullmatch(r"[가-힣]{2,4}", text):
-        return {"query": {"회원명": text}, "intent": "search_member"}
+        return {"intent": "search_member", "query": {"회원명": text}}
 
     # 회원 등록
-    if text.startswith("회원등록"):
-        return {"query": {"raw_text": text}, "intent": "register_member"}
+    if any(word in text for word in ["회원 등록", "회원 추가"]):
+        return {"intent": "add_member", "query": {"raw_text": text}}
+
+    # 회원 수정
+    if any(word in text for word in ["회원 수정", "회원 변경"]):
+        return {"intent": "update_member", "query": {"raw_text": text}}
 
     # 회원 삭제
-    if "삭제" in text:
-        m = re.search(r"([가-힣]{2,4}).*삭제", text)
+    if any(word in text for word in ["회원 삭제", "회원 제거"]):
+        m = re.search(r"([가-힣]{2,4}).*(삭제|제거)", text)
         if m:
-            return {"query": {"회원명": m.group(1)}, "intent": "delete_member"}
-        return {"query": {"raw_text": text}, "intent": "delete_member"}
+            return {"intent": "delete_member", "query": {"회원명": m.group(1)}}
+        return {"intent": "delete_member", "query": {"raw_text": text}}
 
     # -------------------------------
     # 메모/일지 관련
@@ -314,60 +328,48 @@ def nlu_to_pc_input(text: str) -> dict:
     m = re.match(r"(\S+)\s+(개인일지|상담일지|활동일지)\s+저장\s+(.+)", text)
     if m:
         member_name, diary_type, content = m.groups()
-        return {
-            "intent": "memo_add",
-            "query": {"회원명": member_name, "일지종류": diary_type, "내용": content}
-        }
+        return {"intent": "memo_add", "query": {"회원명": member_name, "일지종류": diary_type, "내용": content}}
 
     # 메모 검색 (회원명 + 일지종류 + 검색)
-    m = re.match(r"(\S+)\s+(개인일지|상담일지|활동일지)\s+검색\s+(.+)", text)
+    m = re.match(r"(\S+)\s+(개인일지|상담일지|활동일지)\s+(검색|조회)\s+(.+)", text)
     if m:
-        member_name, diary_type, keyword = m.groups()
-        return {
-            "intent": "memo_search",
-            "query": {"회원명": member_name, "일지종류": diary_type, "검색어": keyword}
-        }
+        member_name, diary_type, _, keyword = m.groups()
+        return {"intent": "memo_search", "query": {"회원명": member_name, "일지종류": diary_type, "검색어": keyword}}
 
     # 전체 메모 검색
-    m2 = re.match(r"전체\s*(메모|일지)\s*검색\s*(.+)", text)
-    if m2:
-        keyword = m2.group(2)
-        return {
-            "intent": "memo_search",
-            "query": {"회원명": "전체", "일지종류": "전체", "검색어": keyword}
-        }
+    m = re.match(r"전체\s*(메모|일지)\s*(검색|조회)\s*(.+)", text)
+    if m:
+        keyword = m.group(3)
+        return {"intent": "memo_search", "query": {"회원명": "전체", "일지종류": "전체", "검색어": keyword}}
 
     # -------------------------------
     # 주문 관련
     # -------------------------------
     if "주문" in text:
-        # 주문 저장 → 특별 처리
         if "저장" in text:
-            return {"query": {"주문": True}, "intent": "order_auto"}
-
-        # 회원명 + 주문
+            return {"intent": "order_auto", "query": {"주문": True}}
         m = re.search(r"([가-힣]{2,4}).*주문", text)
         if m:
-            return {"query": {"주문회원": m.group(1)}, "intent": "order_auto"}
-
-        return {"query": {"주문": True}, "intent": "order_auto"}
+            return {"intent": "order_auto", "query": {"주문회원": m.group(1)}}
+        return {"intent": "order_auto", "query": {"주문": True}}
 
     # -------------------------------
     # 회원 저장 (업서트)
     # -------------------------------
     if "회원 저장" in text or "저장" in text:
-        return {"query": {"raw_text": text}, "intent": "save_member"}
+        return {"intent": "save_member", "query": {"raw_text": text}}
 
     # -------------------------------
     # 후원수당
     # -------------------------------
     if "후원수당" in text or "수당" in text:
-        return {"query": {"raw_text": text}, "intent": "commission_find"}
+        return {"intent": "commission_find", "query": {"raw_text": text}}
 
     # -------------------------------
     # 기본 반환
     # -------------------------------
-    return {"query": {"raw_text": text}, "intent": "unknown"}
+    return {"intent": "unknown", "query": {"raw_text": text}}
+
 
 
 

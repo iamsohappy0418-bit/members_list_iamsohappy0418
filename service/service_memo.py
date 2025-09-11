@@ -2,6 +2,8 @@ import re
 
 import traceback
 from datetime import datetime, timedelta
+import unicodedata
+
 
 # ===== project: utils =====
 from utils import (
@@ -121,23 +123,29 @@ def search_in_sheet(sheet_name, keywords, search_mode="any",
 
 
 
+
+
+def normalize_korean(text: str) -> str:
+    if not text:
+        return ""
+    t = unicodedata.normalize("NFC", text)   # 유니코드 정규화
+    t = re.sub(r"\s+", " ", t)               # 연속 공백 정리
+    return t.strip().lower()
+
+
 def keyword_match(content_lower: str, clean_keywords: list, search_mode="any") -> bool:
     if not clean_keywords:
         return False
 
-    # ✅ content 정규화 (특수문자 제거 + 소문자화 + 공백 제거)
-    normalized_content = re.sub(r"[^가-힣a-zA-Z0-9\s]", " ", content_lower)
-    normalized_content = re.sub(r"\s+", "", normalized_content).lower()
-
+    normalized_content = normalize_korean(content_lower)
     results = []
+
     for k in clean_keywords:
-        # ✅ keyword 정규화 (공백 제거 + 소문자)
-        k_norm = re.sub(r"\s+", "", k).lower()
+        k_norm = normalize_korean(k)
         found = k_norm in normalized_content
         results.append(found)
-
-    print(f"[DEBUG] keyword_match | content={normalized_content[:50]}... | "
-          f"keywords={clean_keywords} | results={results} | mode={search_mode}")
+        print(f"[DEBUG] keyword_match | keyword={k_norm} | "
+              f"in_content={found} | content={normalized_content[:50]}...")
 
     if search_mode == "동시검색":
         return all(results)
@@ -146,14 +154,14 @@ def keyword_match(content_lower: str, clean_keywords: list, search_mode="any") -
 
 
 
+
 # ======================================================================================
 # ✅ 통합 검색 (Core)
 # ======================================================================================
+
+
 def search_memo_core(sheet_name, keywords, search_mode="any", member_name=None,
                      start_date=None, end_date=None, limit=20):
-    """
-    시트에서 메모를 검색하는 핵심 함수
-    """
     results = []
     sheet = get_worksheet(sheet_name)
     if not sheet:
@@ -162,7 +170,6 @@ def search_memo_core(sheet_name, keywords, search_mode="any", member_name=None,
 
     rows = sheet.get_all_records()
 
-    # ✅ 날짜 범위 파싱
     start_dt, end_dt = None, None
     try:
         if start_date:
@@ -180,20 +187,21 @@ def search_memo_core(sheet_name, keywords, search_mode="any", member_name=None,
         member = str(row.get("회원명", "")).strip()
         date_str = str(row.get("날짜", "")).strip()
 
-        # ✅ 디버그 출력
+        # ✅ 키워드 준비
+        clean_keywords = [k.strip().lower() for k in keywords if k]
+        content_lower = content.lower()
+
+        # ✅ 최종 검색 직전 출력
         print("=" * 60)
-        print(f"[DEBUG] ({sheet_name}) row {idx}")
+        print(f"[DEBUG][최종검색 직전] sheet={sheet_name}, row={idx}")
         print(f"  회원명={member}, 날짜={date_str}")
-        print(f"  raw_content={raw_content}")
-        print(f"  cleaned_content={content}")
-        print(f"  keywords={keywords}")
+        print(f"  content_lower={content_lower[:200]}")
+        print(f"  clean_keywords={clean_keywords}")
         print("=" * 60)
 
-        # 회원명 필터
         if member_name and member != member_name:
             continue
 
-        # 날짜 필터
         if date_str:
             try:
                 row_date = datetime.strptime(date_str.split()[0], "%Y-%m-%d")
@@ -204,14 +212,9 @@ def search_memo_core(sheet_name, keywords, search_mode="any", member_name=None,
             except Exception:
                 pass
 
-        # 키워드 매칭
-        clean_keywords = [k.strip().lower() for k in keywords if k]
-        content_lower = content.lower()
-
         if not keyword_match(content_lower, clean_keywords, search_mode):
             continue
 
-        # ✅ 결과 추가
         appended = {
             "날짜": date_str,
             "회원명": member,
@@ -220,18 +223,9 @@ def search_memo_core(sheet_name, keywords, search_mode="any", member_name=None,
         }
         results.append(appended)
 
-        # ✅ append 직후 로그
-        print(f"[DEBUG] ✅ appended result: {appended}")
-        print(f"[DEBUG] 현재 results 개수: {len(results)}")
-
         if len(results) >= limit:
             break
 
+    # ✅ 최종 결과 요약
+    print(f"[DEBUG] ✅ 최종 results({sheet_name}) | {len(results)}건")
     return results
-
-
-
-
-
-
-
