@@ -40,35 +40,37 @@ def parse_request_line(text: str) -> Tuple[Optional[str], Optional[str], Optiona
 # ======================================================================================
 # ✅ 메모 파서 + 저장
 # ======================================================================================
-def parse_memo(text: str) -> Dict[str, str]:
-    """
-    자연어 문장에서 메모(상담일지/개인일지/활동일지)를 추출 후 시트에 저장
-    예: "이태수 상담일지 저장 오늘은 비가 옵니다"
-    """
-    member, sheet, action, content = parse_request_line(text)
-    if not member or not sheet or not content:
-        return {"status": "fail", "reason": "입력 문장에서 필요한 정보를 추출하지 못했습니다."}
+def parse_memo(text: str) -> dict:
+    text = (text or "").strip()
+    diary_types = ["상담일지", "개인일지", "활동일지"]
 
-    # ✅ 시트명 매핑
-    sheet_map = {
-        "상담일지": "상담일지",
-        "개인일지": "개인메모",   # 내부적으로는 개인메모 시트
-        "활동일지": "활동일지",
-    }
-    target_sheet_name = sheet_map.get(sheet)
-    if not target_sheet_name:
-        return {"status": "fail", "reason": f"지원하지 않는 시트명: {sheet}"}
+    result = {"회원명": None, "일지종류": None, "내용": None, "keywords": []}
 
-    # ✅ 시트 불러오기
-    ws = get_worksheet(target_sheet_name)
+    # ✅ 전체메모 검색 (띄어쓰기 허용)
+    normalized = text.replace(" ", "")
+    if normalized.startswith("전체메모") and "검색" in text:
+        keyword = text.split("검색", 1)[1].strip()
+        result.update({
+            "일지종류": "전체",
+            "keywords": [keyword] if keyword else []
+        })
+        return result
 
-    # ✅ 행 구성 (날짜, 회원명, 내용)
-    row = [now_kst(), member, content]
-    ws.append_row(row, value_input_option="USER_ENTERED")
+    # ✅ 일반 저장/검색
+    for dt in diary_types:
+        if dt in text:
+            before, after = text.split(dt, 1)
+            result["회원명"] = before.strip()
+            result["일지종류"] = dt
 
-    return {
-        "status": "success",
-        "sheet": target_sheet_name,
-        "member": member,
-        "content": content,
-    }
+            if "저장" in after:
+                result["내용"] = after.replace("저장", "").strip()
+            elif "검색" in after:
+                keyword = after.replace("검색", "").strip()
+                result["keywords"] = [keyword] if keyword else []
+            return result
+
+    return result
+
+
+

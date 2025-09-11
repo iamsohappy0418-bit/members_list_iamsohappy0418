@@ -1,3 +1,5 @@
+import re
+
 import traceback
 from datetime import datetime, timedelta
 
@@ -118,6 +120,32 @@ def search_in_sheet(sheet_name, keywords, search_mode="any",
 
 
 
+
+def keyword_match(content_lower: str, clean_keywords: list, search_mode="any") -> bool:
+    if not clean_keywords:
+        return False
+
+    # ✅ content 정규화 (특수문자 제거 + 소문자화 + 공백 제거)
+    normalized_content = re.sub(r"[^가-힣a-zA-Z0-9\s]", " ", content_lower)
+    normalized_content = re.sub(r"\s+", "", normalized_content).lower()
+
+    results = []
+    for k in clean_keywords:
+        # ✅ keyword 정규화 (공백 제거 + 소문자)
+        k_norm = re.sub(r"\s+", "", k).lower()
+        found = k_norm in normalized_content
+        results.append(found)
+
+    print(f"[DEBUG] keyword_match | content={normalized_content[:50]}... | "
+          f"keywords={clean_keywords} | results={results} | mode={search_mode}")
+
+    if search_mode == "동시검색":
+        return all(results)
+    return any(results)
+
+
+
+
 # ======================================================================================
 # ✅ 통합 검색 (Core)
 # ======================================================================================
@@ -125,12 +153,6 @@ def search_memo_core(sheet_name, keywords, search_mode="any", member_name=None,
                      start_date=None, end_date=None, limit=20):
     """
     시트에서 메모를 검색하는 핵심 함수
-    - sheet_name: "상담일지", "개인일지", "활동일지"
-    - keywords: ["중국", "세미나"]
-    - search_mode: "동시검색" 또는 "any"
-    - member_name: 특정 회원명 필터링
-    - start_date, end_date: 검색 날짜 범위 (YYYY-MM-DD)
-    - limit: 최대 결과 개수
     """
     results = []
     sheet = get_worksheet(sheet_name)
@@ -141,8 +163,7 @@ def search_memo_core(sheet_name, keywords, search_mode="any", member_name=None,
     rows = sheet.get_all_records()
 
     # ✅ 날짜 범위 파싱
-    start_dt = None
-    end_dt = None
+    start_dt, end_dt = None, None
     try:
         if start_date:
             start_dt = datetime.strptime(start_date, "%Y-%m-%d")
@@ -151,21 +172,28 @@ def search_memo_core(sheet_name, keywords, search_mode="any", member_name=None,
     except Exception:
         pass
 
-    for row in rows:
+    for idx, row in enumerate(rows, start=1):
         raw_content = str(row.get("내용", ""))
-        # ✅ 1차 정제: clean_content (회원명 제거, 불필요 단어 정리)
         content = clean_content(raw_content, member_name)
-        # ✅ 2차 정제: clean_value_expression (조사/꼬리명령어/기호 제거)
         content = clean_value_expression(content).lower()
 
         member = str(row.get("회원명", "")).strip()
         date_str = str(row.get("날짜", "")).strip()
 
-        # ✅ 회원명 필터
+        # ✅ 디버그 출력
+        print("=" * 60)
+        print(f"[DEBUG] ({sheet_name}) row {idx}")
+        print(f"  회원명={member}, 날짜={date_str}")
+        print(f"  raw_content={raw_content}")
+        print(f"  cleaned_content={content}")
+        print(f"  keywords={keywords}")
+        print("=" * 60)
+
+        # 회원명 필터
         if member_name and member != member_name:
             continue
 
-        # ✅ 날짜 범위 필터
+        # 날짜 필터
         if date_str:
             try:
                 row_date = datetime.strptime(date_str.split()[0], "%Y-%m-%d")
@@ -176,24 +204,25 @@ def search_memo_core(sheet_name, keywords, search_mode="any", member_name=None,
             except Exception:
                 pass
 
-        # ✅ 키워드 매칭
+        # 키워드 매칭
         clean_keywords = [k.strip().lower() for k in keywords if k]
         content_lower = content.lower()
 
-        if search_mode == "동시검색":
-            if not all(k in content_lower for k in clean_keywords):
-                continue
-        else:  # any
-            if not any(k in content_lower for k in clean_keywords):
-                continue
+        if not keyword_match(content_lower, clean_keywords, search_mode):
+            continue
 
         # ✅ 결과 추가
-        results.append({
+        appended = {
             "날짜": date_str,
             "회원명": member,
             "내용": content,
             "일지종류": sheet_name
-        })
+        }
+        results.append(appended)
+
+        # ✅ append 직후 로그
+        print(f"[DEBUG] ✅ appended result: {appended}")
+        print(f"[DEBUG] 현재 results 개수: {len(results)}")
 
         if len(results) >= limit:
             break

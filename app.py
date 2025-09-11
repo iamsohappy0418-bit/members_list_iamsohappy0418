@@ -476,23 +476,26 @@ def member_route():
 def memo_route():
     """
     메모 관련 API (저장/검색 자동 분기)
-    - before_request 에서 g.query 세팅됨
-    - g.query["intent"] 값에 따라 실행
-    - 자연어 입력이면 post_intent로 우회
+    - 자연어 입력은 무조건 post_intent() 우회
+    - JSON 입력은 구조 분석 → 저장 / 검색 분기
     """
     try:
         data = getattr(g, "query", {}) or {}
 
-        # ⚠️ 문자열로 들어온 경우 dict로 래핑 (오류 방지)
+        # ✅ 자연어 입력(문자열) → post_intent 우회
         if isinstance(data, str):
-            data = {"query": data}
+            return post_intent()
 
-        # query가 문자열이고 JSON 구조화 키(회원명/내용/일지종류)가 없으면 → 자연어로 간주
-        if isinstance(data.get("query"), str) and not any(k in data for k in ("회원명", "내용", "일지종류")):
-            return post_intent()  # ✅ 자연어라면 postIntent로 우회
-
-        # intent 기반 실행
+        # ✅ JSON 입력 처리
         intent = data.get("intent")
+
+        # intent가 없는 경우 JSON 구조로 자동 판별
+        if not intent:
+            if all(k in data for k in ("회원명", "내용", "일지종류")):
+                intent = "memo_save_auto_func"
+            elif "keywords" in data and "일지종류" in data:
+                intent = "search_memo_func"
+
         func = MEMO_INTENTS.get(intent)
 
         if not func:
@@ -518,6 +521,8 @@ def memo_route():
             "status": "error",
             "message": f"메모 처리 중 오류 발생: {str(e)}"
         }), 500
+
+    
 
 
 
