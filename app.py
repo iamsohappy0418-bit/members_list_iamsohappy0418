@@ -255,32 +255,32 @@ def preprocess_input():
 def preprocess_member_query(text: str) -> str:
     """
     회원 검색용 전처리
-    - 회원번호, 휴대폰, 한글 이름 감지
-    - 단순히 감지만 하고, 불필요한 단어는 붙이지 않는다
+    - 회원번호, 휴대폰번호, 한글 이름 감지
+    - 불필요한 접두어("회원검색")는 붙이지 않고 원래 값 그대로 반환
     """
-    # 1. 회원번호
-    if text.isdigit():
-        result = text
-        print(f"[preprocess_member_query] 회원번호 감지 → {result}")
-        return result
+    text = (text or "").strip()
 
-    # 2. 휴대폰 번호
+    # 1. 회원번호 (숫자만)
+    if text.isdigit():
+        print(f"[preprocess_member_query] 회원번호 감지 → {text}")
+        return text
+
+    # 2. 휴대폰 번호 (010-xxxx-xxxx or 010xxxxxxxx)
     phone_pattern = r"^010[-]?\d{4}[-]?\d{4}$"
-    if re.match(phone_pattern, text):
-        result = text
-        print(f"[preprocess_member_query] 휴대폰번호 감지 → {result}")
-        return result
+    if re.fullmatch(phone_pattern, text):
+        print(f"[preprocess_member_query] 휴대폰번호 감지 → {text}")
+        return text
 
     # 3. 한글 이름 (2~4자)
     name_pattern = r"^[가-힣]{2,4}$"
-    if re.match(name_pattern, text):
-        result = text
-        print(f"[preprocess_member_query] 한글이름 감지 → {result}")
-        return result
+    if re.fullmatch(name_pattern, text):
+        print(f"[preprocess_member_query] 한글이름 감지 → {text}")
+        return text
 
     # 4. 기본 (변경 없음)
     print(f"[preprocess_member_query] 보정 없음 → {text}")
     return text
+
 
 
 # --------------------------------------------------------------------
@@ -315,6 +315,7 @@ def post_intent():
     # ✅ 보정 로직 적용 (이름/번호 단독 입력 시 '회원검색'으로 변환)
     text = preprocess_member_query(text)
 
+    print(f"[DEBUG] 최종 전처리 query: {text}")
 
     # ✅ 전처리 + intent 추출
     processed = {
@@ -351,6 +352,66 @@ def post_intent():
             "status": "error",
             "message": f"post_intent 처리 중 오류 발생: {str(e)}"
         }), 500
+
+
+
+
+
+# -------------------------------
+# guess_intent 엔드포인트
+# -------------------------------
+@app.route("/guess_intent", methods=["POST"])
+def guess_intent_entry():
+    data = request.json
+    user_input = data.get("query", "")
+
+    if not user_input:
+        return jsonify({"status": "error", "message": "❌ 입력(query)이 비어 있습니다."}), 400
+
+    # 1. 전처리: query 정규화
+    processed = preprocess_user_input(user_input)
+    normalized_query = processed["query"]
+    options = processed["options"]
+
+    # 2. intent 추출
+    intent = guess_intent(normalized_query)
+
+    if not intent or intent == "unknown":
+        return jsonify({"status": "error", "message": f"❌ intent를 추출할 수 없습니다. (query={normalized_query})"}), 400
+
+    # 3. intent → 실행 함수 매핑
+    func = INTENT_MAP.get(intent)
+    if not func:
+        return jsonify({"status": "error", "message": f"❌ 처리할 수 없는 intent입니다. (intent={intent})"}), 400
+
+    # 4. 실행
+    result = func(normalized_query, options)
+
+    if isinstance(result, dict):
+        return jsonify(result), result.get("http_status", 200)
+    if isinstance(result, list):
+        return jsonify(result), 200
+    return jsonify({"status": "error", "message": "알 수 없는 반환 형식"}), 500
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -531,44 +592,6 @@ def nlu_to_pc_input(text: str) -> dict:
 
 
 
-
-
-
-# -------------------------------
-# guess_intent 엔드포인트
-# -------------------------------
-@app.route("/guess_intent", methods=["POST"])
-def guess_intent_entry():
-    data = request.json
-    user_input = data.get("query", "")
-
-    if not user_input:
-        return jsonify({"status": "error", "message": "❌ 입력(query)이 비어 있습니다."}), 400
-
-    # 1. 전처리: query 정규화
-    processed = preprocess_user_input(user_input)
-    normalized_query = processed["query"]
-    options = processed["options"]
-
-    # 2. intent 추출
-    intent = guess_intent(normalized_query)
-
-    if not intent or intent == "unknown":
-        return jsonify({"status": "error", "message": f"❌ intent를 추출할 수 없습니다. (query={normalized_query})"}), 400
-
-    # 3. intent → 실행 함수 매핑
-    func = INTENT_MAP.get(intent)
-    if not func:
-        return jsonify({"status": "error", "message": f"❌ 처리할 수 없는 intent입니다. (intent={intent})"}), 400
-
-    # 4. 실행
-    result = func(normalized_query, options)
-
-    if isinstance(result, dict):
-        return jsonify(result), result.get("http_status", 200)
-    if isinstance(result, list):
-        return jsonify(result), 200
-    return jsonify({"status": "error", "message": "알 수 없는 반환 형식"}), 500
 
 
 

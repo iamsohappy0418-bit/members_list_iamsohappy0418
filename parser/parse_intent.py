@@ -1,3 +1,5 @@
+import re
+
 # -------------------------------
 # intent 규칙 정의
 # -------------------------------
@@ -33,8 +35,8 @@ INTENT_RULES = {
     ("수당", "자연어"): "search_commission_by_nl",
 }
 
-# 회원명 후보 (임시: DB 시트 연동으로 개선 가능)
-MEMBER_CANDIDATES = ["이태수", "이판주", "김혜연"]
+
+
 
 def guess_intent(query: str) -> str:
     """
@@ -47,12 +49,14 @@ def guess_intent(query: str) -> str:
         if all(kw in query for kw in keywords):
             return intent
 
-    # 2. 회원명 단독 입력 → 자동 조회
-    for name in MEMBER_CANDIDATES:
-        if name in query:
-            return "search_member"
+    # 2. 회원명 단독 입력 (한글 2~4자) → 자동 조회
+    import re
+    if re.fullmatch(r"[가-힣]{2,4}", query):
+        return "search_member"
 
     return "unknown"
+
+
 
 
 
@@ -63,7 +67,7 @@ def guess_intent(query: str) -> str:
 # -------------------------------
 # 전처리 함수
 # -------------------------------
-MEMBER_CANDIDATES = ["이태수", "이판주", "김혜연"]
+
 DIARY_TYPES = ["개인일지", "상담일지", "활동일지"]
 
 def preprocess_user_input(user_input: str) -> dict:
@@ -73,17 +77,18 @@ def preprocess_user_input(user_input: str) -> dict:
     - 불필요한 토큰 제거 후 query 재구성
     - 옵션(full_list 등) 감지
     """
+    import re
+
     member_name = None
     diary_type = None
     action = None
     keyword = None
     options = {}
 
-    # 1. 회원명 추출
-    for name in MEMBER_CANDIDATES:
-        if name in user_input:
-            member_name = name
-            break
+    # 1. 회원명 추출 (2~4자 한글 이름 감지)
+    m = re.fullmatch(r"[가-힣]{2,4}", user_input.strip())
+    if m:
+        member_name = m.group(0)
 
     # 2. 일지 종류 추출
     for dtype in DIARY_TYPES:
@@ -125,3 +130,4 @@ def preprocess_user_input(user_input: str) -> dict:
         "query": final_query,
         "options": options
     }
+

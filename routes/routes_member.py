@@ -1,5 +1,10 @@
 import re
 from flask import g, request
+from collections import OrderedDict
+import json
+from flask import Response
+
+
 
 # 시트/서비스/파서 의존성들 (하단 함수에서 사용)
 from utils.sheets import (
@@ -35,19 +40,20 @@ def _digits(s):
 
 
 
-def _compact_row(r: dict) -> dict:
-    """회원 정보를 compact dict 형태로 반환 (DB 시트 기준)"""
-    return {
-        "회원명": r.get("회원명", ""),
-        "회원번호": r.get("회원번호", ""),
-        "특수번호": r.get("특수번호", ""),
-        "코드": r.get("코드", ""),
-        "생년월일": r.get("생년월일", ""),
-        "계보도": r.get("계보도", ""),
-        "근무처": r.get("근무처", ""),
-        "주소": r.get("주소", ""),
-        "메모": r.get("메모", ""),
-    }
+def _compact_row(r: dict) -> OrderedDict:
+    """회원 정보를 고정된 필드 순서로 반환"""
+    return OrderedDict([
+        ("회원명", r.get("회원명", "")),
+        ("회원번호", r.get("회원번호", "")),
+        ("특수번호", r.get("특수번호", "")),
+        ("코드", r.get("코드", "")),
+        ("생년월일", r.get("생년월일", "")),
+        ("근무처", r.get("근무처", "")),
+        ("계보도", r.get("계보도", "")),
+        ("주소", r.get("주소", "")),
+        ("메모", r.get("메모", "")),
+    ])
+
 
 
 def _line(d: dict) -> str:
@@ -221,8 +227,11 @@ def find_member_logic():
         # 2) 필터링
         def match_row(r: dict) -> bool:
             if f["회원명"]:
-                if f["회원명"] not in _norm(r.get("회원명", "")):
+                db_name = (r.get("회원명", "") or "").strip()
+                print("[DEBUG] 회원명 비교:", f["회원명"], "vs", repr(db_name))
+                if f["회원명"] != db_name:
                     return False
+
             if f["회원번호"]:
                 if _norm(r.get("회원번호", "")) != f["회원번호"]:
                     return False
@@ -233,6 +242,7 @@ def find_member_logic():
                 if _norm(r.get("특수번호", "")) != f["특수번호"]:
                     return False
             return True
+
 
         matched = [r for r in rows if match_row(r)]
         matched.sort(key=lambda r: _norm(r.get("회원명", "")))
