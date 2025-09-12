@@ -78,7 +78,7 @@ def _line(d: dict) -> str:
 # ────────────────────────────────────────────────────────────────────
 # 1) 허브: search_member_func  ← nlu_to_pc_input 가 intent='search_member'로 보냄
 # ────────────────────────────────────────────────────────────────────
-def search_member_func():
+def search_member_func(name):
     """
     회원 검색 허브 함수 (라우트 아님)
     - g.query["query"] 가 str이면 '코드...' 여부로 분기
@@ -268,54 +268,60 @@ from flask import request, jsonify, session
 
 
 
+def member_select_direct(results):
+    if not results:
+        return {
+            "status": "error",
+            "message": "회원 검색 결과가 없습니다.",
+            "http_status": 404
+        }
 
+    return {
+        "status": "success",
+        "message": "회원 전체정보입니다.",
+        "results": results,
+        "http_status": 200
+    }
 
+# ===================**************
 def member_select():
-    """
-    회원 전체정보/종료 선택 처리 함수
-    - choice=1 → 전체정보
-    - choice=2 → 종료
-    - 자연어 "종료" → choice=2 로 매핑
-    """
     data = request.json or {}
     choice = str(data.get("choice", "")).strip()
 
-    # 자연어 → 숫자 매핑
     if choice in ["종료", "끝", "exit", "quit"]:
         choice = "2"
     elif choice in ["전체정보", "상세", "detail", "info"]:
         choice = "1"
 
-    # 세션에서 마지막 검색 결과 가져오기
     results = session.get("last_search_results", [])
 
     if not results:
         return {
             "status": "error",
-            "message": "이전에 검색된 결과가 없습니다. 먼저 /member/search 를 호출해주세요.",
+            "message": "이전에 검색된 결과가 없습니다. 먼저 회원명을 입력해주세요.",
             "http_status": 400
         }
 
     if choice == "1":
         return {
             "status": "success",
-            "message": "전체정보를 표시합니다.",
+            "message": "회원 전체정보입니다.",
             "results": results,
             "http_status": 200
         }
     elif choice == "2":
-        session.pop("last_search_results", None)  # 세션 초기화
+        session.pop("last_search_results", None)
         return {
             "status": "success",
-            "message": "종료합니다.",
+            "message": "세션을 종료했습니다.",
             "http_status": 200
         }
-    else:
-        return {
-            "status": "error",
-            "message": "잘못된 선택입니다. 1 또는 2를 입력하거나 '전체정보' 또는 '종료'라고 입력해주세요.",
-            "http_status": 400
-        }
+
+    return {
+        "status": "error",
+        "message": "잘못된 선택입니다. '전체정보' 또는 '종료'를 입력해주세요.",
+        "http_status": 400
+    }
 
 
 

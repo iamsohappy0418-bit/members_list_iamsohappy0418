@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 import inspect
 
 
+
 # ===== 3rd party =====
 import requests
 from flask import Flask, request, jsonify, Response, g, send_from_directory
@@ -83,8 +84,8 @@ from utils.text_cleaner import normalize_code_query
 from parser import guess_intent, preprocess_user_input
 from utils import clean_member_query
 from routes.routes_member import member_select
-
-
+from routes.routes_member import search_member_func
+from routes.routes_member import member_select_direct
 
 
 
@@ -292,15 +293,8 @@ def preprocess_member_query(text: str) -> str:
 # --------------------------------------------------------------------
 @app.route("/postIntent", methods=["POST"])
 def post_intent():
-    """
-    자연어 intent 처리 API
-    - 입력: { "text": "..."} 또는 { "query": "..." }
-    - 내부: intent 추출 후 해당 함수 실행
-    - 출력: intent 처리 결과 JSON
-    """
     data = request.get_json(silent=True) or {}
 
-    # ✅ text or query 필드 추출
     text = data.get("text") if isinstance(data.get("text"), str) else data.get("query")
     if not isinstance(text, str):
         text = ""
@@ -309,41 +303,53 @@ def post_intent():
     if not text:
         return jsonify({"status": "error", "message": "❌ text 또는 query 필드가 필요합니다."}), 400
 
-    # ✅ 회원 관련 액션 단어 제거 (조회/검색/등록/수정/삭제 등)
     text = clean_member_query(text)
-    # ✅ 보정 로직 적용 (이름/번호 단독 입력 시 '회원검색'으로 변환)
     text = preprocess_member_query(text)
 
     print(f"[DEBUG] 최종 전처리 query: {text}")
 
-    # ✅ 전처리 + intent 추출
-    processed = {
-        "query": text,
-        "options": {}
-    }
-
-    normalized_query = processed["query"]
-    options = processed["options"]
+    normalized_query = text
+    options = {}
     intent = guess_intent(normalized_query)
 
-    # g에 표준화된 구조 저장
     g.query = {
         "query": normalized_query,
         "options": options,
         "intent": intent,
     }
 
-    # ✅ INTENT_MAP 실행기로 위임 (run_intent_func 적용)
-    func = INTENT_MAP.get(intent)
-    if not func:
-        return jsonify({
-            "status": "error",
-            "message": f"❌ 처리할 수 없는 intent입니다. (intent={intent})"
-        }), 400
-
     try:
+        # ✅ intent가 member_select면 세션 없이 자동 검색 + 전체정보 출력
+        if intent == "member_select":
+            import re
+            name_match = re.match(r"[가-힣]{2,4}", normalized_query)
+            if name_match:
+                member_name = name_match.group(0)
+                print(f"[AUTO] 세션 없이 '{member_name}' 자동 검색 시도")
+
+                results = search_member_func(member_name)
+                if results.get("status") == "success":
+                    return jsonify(member_select_direct(results["results"])), 200
+                else:
+                    return jsonify(results), results.get("http_status", 400)
+
+            return jsonify({
+                "status": "error",
+                "message": "회원 이름을 추출할 수 없습니다.",
+                "http_status": 400
+            })
+
+        # ✅ 일반 intent 실행
+        func = INTENT_MAP.get(intent)
+        if not func:
+            return jsonify({
+                "status": "error",
+                "message": f"❌ 처리할 수 없는 intent입니다. (intent={intent})"
+            }), 400
+
         result = run_intent_func(func, normalized_query, options)
         return jsonify(result), result.get("http_status", 200)
+
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -351,6 +357,8 @@ def post_intent():
             "status": "error",
             "message": f"post_intent 처리 중 오류 발생: {str(e)}"
         }), 500
+
+
 
 
 

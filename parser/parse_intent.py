@@ -15,6 +15,14 @@ INTENT_RULES = {
     ("회원", "탈퇴"): "delete_member",
     ("코드", "검색"): "search_by_code_logic",
 
+    # ✅ 회원 선택 관련 추가
+    ("전체정보",): "member_select",
+    ("상세정보",): "member_select",
+    ("상세",): "member_select",
+    ("종료",): "member_select",
+    ("끝",): "member_select",
+
+
     # 메모/일지 관련
     ("일지", "저장"): "memo_add",
     ("상담일지", "추가"): "add_counseling",
