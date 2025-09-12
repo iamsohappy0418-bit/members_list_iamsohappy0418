@@ -3,7 +3,10 @@ import os
 import re
 import json
 import traceback
+from flask import g
 from datetime import datetime, timedelta, timezone
+import inspect
+
 
 # ===== 3rd party =====
 import requests
@@ -46,6 +49,8 @@ from utils import (
     extract_order_from_uploaded_image, parse_order_from_text,
     # 검색
     searchMemberByNaturalText, fallback_natural_search, find_member_in_text,
+
+    run_intent_func,
 )
 
 # ===== parser =====
@@ -75,7 +80,8 @@ from service import (
 )
 
 from utils.text_cleaner import normalize_code_query
-
+from parser import guess_intent, preprocess_user_input
+from utils import clean_member_query
 
 
 
@@ -195,13 +201,25 @@ def debug_sheets():
 
 
 
+# --------------------------------------------------
+# 공통 실행 유틸
+# --------------------------------------------------
+def run_intent_func(func, query=None, options=None):
+    """함수 시그니처 검사 후 안전하게 실행"""
+    sig = inspect.signature(func)
+    if len(sig.parameters) == 0:
+        return func()
+    elif len(sig.parameters) == 1:
+        return func(query)
+    else:
+        return func(query, options)
 
 
 
 
-# ======================================================================================
-# ======================================================================================
-# ======================================================================================
+
+
+
 # --------------------------------------------------
 # 요청 전처리
 # --------------------------------------------------
@@ -233,26 +251,72 @@ def preprocess_input():
 # --------------------------------------------------------------------
 # postIntent (자연어 입력 전용 공식 진입점)
 # --------------------------------------------------------------------
+
+
+
 @app.route("/postIntent", methods=["POST"])
 def post_intent():
+    """
+    자연어 intent 처리 API
+    - 입력: { "text": "..."} 또는 { "query": "..." }
+    - 내부: intent 추출 후 해당 함수 실행
+    - 출력: intent 처리 결과 JSON
+    """
     data = request.get_json(silent=True) or {}
-    if isinstance(data, str):  # ⚠️ 문자열일 경우 dict로 래핑
-        data = {"query": data}
 
-    # ✅ 문자열만 안전하게 추출
-    text = data.get("text")
+    # ✅ text or query 필드 추출
+    text = data.get("text") if isinstance(data.get("text"), str) else data.get("query")
     if not isinstance(text, str):
-        text = data.get("query") if isinstance(data.get("query"), str) else ""
+        text = ""
     text = text.strip()
 
+
+
+
     if not text:
-        return jsonify({"status": "error", "message": "❌ text 필드가 필요합니다."}), 400
+        return jsonify({"status": "error", "message": "❌ text 또는 query 필드가 필요합니다."}), 400
 
-    # ✅ 자연어 → { intent, query } 변환 (search_member 중심)
-    g.query = nlu_to_pc_input(text)
+    # ✅ 회원 관련 액션 단어 제거 (조회/검색/등록/수정/삭제 등)
+    text = clean_member_query(text)
 
-    # ✅ 표준 실행기로 위임 (INTENT_MAP 사용)
-    return guess_intent_entry()
+
+    # ✅ 전처리 + intent 추출
+    processed = {
+        "query": text,
+        "options": {}
+    }
+
+    normalized_query = processed["query"]
+    options = processed["options"]
+    intent = guess_intent(normalized_query)
+
+    # g에 표준화된 구조 저장
+    g.query = {
+        "query": normalized_query,
+        "options": options,
+        "intent": intent,
+    }
+
+    # ✅ INTENT_MAP 실행기로 위임 (run_intent_func 적용)
+    func = INTENT_MAP.get(intent)
+    if not func:
+        return jsonify({
+            "status": "error",
+            "message": f"❌ 처리할 수 없는 intent입니다. (intent={intent})"
+        }), 400
+
+    try:
+        result = run_intent_func(func, normalized_query, options)
+        return jsonify(result), result.get("http_status", 200)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "status": "error",
+            "message": f"post_intent 처리 중 오류 발생: {str(e)}"
+        }), 500
+
+
 
 
 
@@ -429,29 +493,46 @@ def nlu_to_pc_input(text: str) -> dict:
 
 
 
-# ======================================================================================
-# ======================================================================================
-# ======================================================================================
-# ======================================================================================
 
+
+
+
+
+# -------------------------------
+# guess_intent 엔드포인트
+# -------------------------------
 @app.route("/guess_intent", methods=["POST"])
 def guess_intent_entry():
-    if not g.query or not g.query.get("intent"):
-        return jsonify({"status": "error", "message": "❌ intent를 추출할 수 없습니다."}), 400
+    data = request.json
+    user_input = data.get("query", "")
 
-    intent = g.query["intent"]
-    func = INTENT_MAP.get(intent)   # ✅ 마스터 맵에서 실행 함수 가져옴
+    if not user_input:
+        return jsonify({"status": "error", "message": "❌ 입력(query)이 비어 있습니다."}), 400
 
+    # 1. 전처리: query 정규화
+    processed = preprocess_user_input(user_input)
+    normalized_query = processed["query"]
+    options = processed["options"]
+
+    # 2. intent 추출
+    intent = guess_intent(normalized_query)
+
+    if not intent or intent == "unknown":
+        return jsonify({"status": "error", "message": f"❌ intent를 추출할 수 없습니다. (query={normalized_query})"}), 400
+
+    # 3. intent → 실행 함수 매핑
+    func = INTENT_MAP.get(intent)
     if not func:
         return jsonify({"status": "error", "message": f"❌ 처리할 수 없는 intent입니다. (intent={intent})"}), 400
 
-    result = func()
+    # 4. 실행
+    result = func(normalized_query, options)
+
     if isinstance(result, dict):
         return jsonify(result), result.get("http_status", 200)
     if isinstance(result, list):
         return jsonify(result), 200
     return jsonify({"status": "error", "message": "알 수 없는 반환 형식"}), 500
-
 
 
 
@@ -713,6 +794,10 @@ def commission_route():
             "status": "error",
             "message": f"후원수당 처리 중 오류 발생: {str(e)}"
         }), 500
+
+
+
+
 
 
 

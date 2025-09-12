@@ -19,6 +19,7 @@ from .text_cleaner import (
     clean_content,
     clean_tail_command,
     clean_value_expression,
+    clean_member_query,
 )
 from .utils_string import (
     remove_josa,
@@ -75,6 +76,12 @@ from .utils_search import (
     find_member_in_text,
 )
 
+# --------------------------
+# 실행 함수 호출 유틸 (runner)
+# --------------------------
+from .runner import run_intent_func
+
+
 # --------------------------------------------------
 # 공식 공개 API (__all__)
 # --------------------------------------------------
@@ -103,6 +110,7 @@ __all__ = [
 
     # 검색
     "searchMemberByNaturalText", "fallback_natural_search", "find_member_in_text",
+
+    # 실행 유틸
+    "run_intent_func", clean_member_query,
 ]
-
-

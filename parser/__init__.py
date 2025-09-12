@@ -39,6 +39,9 @@ from .parser_commission import (
     clean_commission_data,
 )
 
+from .parse_intent import guess_intent, preprocess_user_input
+
+
 # --------------------------
 # 필드 맵
 # --------------------------
@@ -67,6 +70,9 @@ __all__ = [
     "clean_commission_data",
     # 필드 맵
     "field_map",
+    # Intent
+    "guess_intent",
+    "preprocess_user_input",
 ]
 
 
