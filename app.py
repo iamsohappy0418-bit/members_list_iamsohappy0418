@@ -248,12 +248,37 @@ def preprocess_input():
     return None
 
 
+
+
+
+
+def preprocess_member_query(user_input: str) -> str:
+    """
+    사용자가 입력한 문자열을 intent 매핑에 맞게 보정하는 함수
+    """
+    text = user_input.strip()
+
+    # 1. 회원번호 (숫자만 입력된 경우)
+    if text.isdigit():
+        return f"회원검색 {text}"
+
+    # 2. 휴대폰 번호 (010-xxxx-xxxx 또는 010xxxxxxxx 패턴)
+    phone_pattern = r"^010[-]?\d{4}[-]?\d{4}$"
+    if re.match(phone_pattern, text):
+        return f"회원검색 {text}"
+
+    # 3. 한글 이름 (2~4자)
+    name_pattern = r"^[가-힣]{2,4}$"
+    if re.match(name_pattern, text):
+        return f"회원검색 {text}"
+
+    # 4. 기본: 보정 없이 그대로 반환
+    return text
+
+
 # --------------------------------------------------------------------
 # postIntent (자연어 입력 전용 공식 진입점)
 # --------------------------------------------------------------------
-
-
-
 @app.route("/postIntent", methods=["POST"])
 def post_intent():
     """
@@ -276,8 +301,12 @@ def post_intent():
     if not text:
         return jsonify({"status": "error", "message": "❌ text 또는 query 필드가 필요합니다."}), 400
 
+
+
     # ✅ 회원 관련 액션 단어 제거 (조회/검색/등록/수정/삭제 등)
     text = clean_member_query(text)
+    # ✅ 회원 관련 액션 단어 제거 (조회/검색/등록/수정/삭제 등)
+    text = preprocess_member_query(text)
 
 
     # ✅ 전처리 + intent 추출
