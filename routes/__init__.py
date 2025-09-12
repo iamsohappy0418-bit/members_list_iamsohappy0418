@@ -14,6 +14,12 @@ from .routes_member import (
     delete_member_func,      # 회원 삭제 실행
     member_select,
     member_select_direct,
+    find_member_logic,
+    # ✅ 신규 추가 (회원 정보 가공/출력)
+    sort_fields_by_field_map,
+    get_full_member_info,
+    get_summary_info,
+    get_compact_info,
 )
 
 # --------------------------
@@ -63,7 +69,10 @@ from .intent_map import (
 __all__ = [
     # 회원
     "search_member_func", "register_member_func",
-    "update_member_func", "save_member_func", "delete_member_func", "member_select", "member_select_direct",
+    "update_member_func", "save_member_func", "delete_member_func", "member_select", "member_select_direct", "find_member_logic",
+    # ✅ 신규 추가
+    "sort_fields_by_field_map", "get_full_member_info",
+    "get_summary_info", "get_compact_info",
 
     # 메모
     "memo_save_auto_func", "add_counseling_func",

@@ -47,22 +47,28 @@ INTENT_RULES = {
 
 
 def guess_intent(query: str) -> str:
-    """
-    단순 규칙 기반 intent 추출
-    """
     query = (query or "").strip()
+    import re
 
-    # 1. 일반 규칙 검사
+    # ✅ "강소희 전체정보", "강소희 상세", "강소희 info"
+    if re.fullmatch(r"[가-힣]{2,4}\s*(전체정보|상세|info)", query):
+        return "member_select"
+
+    # ✅ "전체정보", "상세", "info" 단독 입력
+    if query in ["전체정보", "상세", "info"]:
+        return "member_select"
+
+    # ✅ 이름만 입력 (2~4글자 한글)
+    if re.fullmatch(r"[가-힣]{2,4}", query):
+        return "search_member"
+
+    # ✅ 기존 규칙 검사 (INTENT_RULES 기반)
     for keywords, intent in INTENT_RULES.items():
         if all(kw in query for kw in keywords):
             return intent
 
-    # 2. 회원명 단독 입력 (한글 2~4자) → 자동 조회
-    import re
-    if re.fullmatch(r"[가-힣]{2,4}", query):
-        return "search_member"
-
     return "unknown"
+
 
 
 

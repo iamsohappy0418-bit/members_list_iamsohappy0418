@@ -1,12 +1,9 @@
 import re
-from flask import g, request
-from collections import OrderedDict
 import json
-from flask import Response
+from collections import OrderedDict
+from flask import g, request, Response, jsonify, session
 
-
-
-# 시트/서비스/파서 의존성들 (하단 함수에서 사용)
+# 시트/서비스/파서 의존성들
 from utils.sheets import (
     get_rows_from_sheet,   # DB 시트 행 조회
     get_member_sheet,      # 회원 시트 접근
@@ -18,9 +15,13 @@ from service.service_member import (
     delete_member_internal,          # 회원 삭제
     delete_member_field_nl_internal, # 회원 필드 삭제 (자연어)
 )
-from parser import parse_registration  # 회원 등록/수정 파서
+from parser import parse_registration   # 회원 등록/수정 파서
+from parser.field_map import field_map  # ✅ field_map import
+
+from parser.field_map import field_map
 
 SHEET_NAME_DB = "DB"  # 매직스트링 방지
+
 
 
 
@@ -262,7 +263,7 @@ def find_member_logic(name=None):
         matched = [r for r in rows if match_row(r)]
         matched.sort(key=lambda r: _norm(r.get("회원명", "")))
 
-        results = [_compact_row(r) for r in matched]
+        results = [sort_fields_by_field_map(r) for r in matched]
         display = [_line(d) for d in results]
 
 
@@ -297,6 +298,11 @@ def member_select_direct(results):
         "results": results,
         "http_status": 200
     }
+
+
+
+
+
 
 # ===================**************
 def member_select():
@@ -337,6 +343,86 @@ def member_select():
         "message": "잘못된 선택입니다. '전체정보' 또는 '종료'를 입력해주세요.",
         "http_status": 400
     }
+
+
+
+
+
+
+
+
+# =================================================
+# value 기준 우선순위 리스트 생성
+field_order = []
+seen = set()
+for v in field_map.values():
+    if v not in seen:
+        field_order.append(v)
+        seen.add(v)
+
+
+def sort_fields_by_field_map(r: dict) -> OrderedDict:
+    ordered = OrderedDict()
+    for key in field_order:
+        if key in r:
+            ordered[key] = r[key]
+    for k, v in r.items():
+        if k not in ordered:
+            ordered[k] = v
+    return ordered
+
+
+def get_full_member_info(results):
+    if not results:
+        return {
+            "status": "error",
+            "message": "회원 검색 결과가 없습니다.",
+            "http_status": 404
+        }
+    full_data = [sort_fields_by_field_map(r) for r in results]
+    return {
+        "status": "success",
+        "message": "회원 전체정보입니다.",
+        "results": full_data,
+        "http_status": 200
+    }
+
+
+def get_summary_info(results):
+    summaries = [_line(r) for r in results]
+    return {
+        "status": "success",
+        "message": "회원 요약정보입니다.",
+        "summary": summaries,
+        "http_status": 200
+    }
+
+
+def get_compact_info(results):
+    compacts = [_compact_row(r) for r in results]
+    return {
+        "status": "success",
+        "message": "회원 간략정보입니다.",
+        "results": compacts,
+        "http_status": 200
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

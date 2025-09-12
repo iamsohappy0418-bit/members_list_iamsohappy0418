@@ -87,6 +87,7 @@ from routes.routes_member import member_select
 from routes.routes_member import search_member_func
 from routes.routes_member import member_select_direct
 from routes.routes_member import find_member_logic
+from routes import get_full_member_info, get_summary_info
 
 
 
@@ -320,17 +321,15 @@ def post_intent():
     }
 
     try:
-        # ✅ intent가 member_select면 세션 없이 자동 검색 + 전체정보 출력
+        # ✅ 전체정보/상세 요청 처리
         if intent == "member_select":
             import re
-            name_match = re.match(r"[가-힣]{2,4}", normalized_query)
+            # "강소희 전체정보", "강소희 상세" 지원
+            name_match = re.match(r"([가-힣]{2,4})(?:\s*(전체정보|상세))?", normalized_query)
             if name_match:
-                member_name = name_match.group(0)
-                print(f"[AUTO] 세션 없이 '{member_name}' 자동 검색 시도")
+                member_name = name_match.group(1)
+                print(f"[AUTO] 세션 없이 '{member_name}' 전체정보 검색 시도")
 
-
-
-                # ✅ 요약 아님 → 전체정보용
                 results = find_member_logic(member_name)
                 if results.get("status") == "success":
                     return jsonify({
@@ -404,7 +403,7 @@ def guess_intent_entry():
         return jsonify({"status": "error", "message": f"❌ 처리할 수 없는 intent입니다. (intent={intent})"}), 400
 
     # 4. 실행
-    result = func(normalized_query, options)
+    result = run_intent_func(func, normalized_query, options)  # ✅ 올바른 실행
 
     if isinstance(result, dict):
         return jsonify(result), result.get("http_status", 200)

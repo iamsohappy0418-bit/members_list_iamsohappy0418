@@ -13,6 +13,7 @@ from routes.routes_commission import (
     commission_find_auto_func, find_commission_func, search_commission_by_nl_func
 )
 
+
 # 회원 관련
 MEMBER_INTENTS = {
     "search_member": search_member_func,
@@ -22,6 +23,11 @@ MEMBER_INTENTS = {
     "save_member": save_member_func,
     "delete_member": delete_member_func,
     "search_by_code_logic": search_by_code_logic,
+
+    # ✅ 추가된 intent 처리
+    "select_member": lambda: get_full_member_info(g.query.get("results", [])),
+    "summary_member": lambda: get_summary_info(g.query.get("results", [])),
+    "compact_member": lambda: get_compact_info(g.query.get("results", [])),
 }
 
 # 메모/일지 관련
