@@ -12,6 +12,7 @@ from .routes_member import (
     update_member_func,      # 회원 수정 실행
     save_member_func,        # 회원 저장(업서트) 실행
     delete_member_func,      # 회원 삭제 실행
+    member_select,
 )
 
 # --------------------------
@@ -61,7 +62,7 @@ from .intent_map import (
 __all__ = [
     # 회원
     "search_member_func", "register_member_func",
-    "update_member_func", "save_member_func", "delete_member_func",
+    "update_member_func", "save_member_func", "delete_member_func", "member_select",
 
     # 메모
     "memo_save_auto_func", "add_counseling_func",

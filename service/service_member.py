@@ -1,6 +1,7 @@
 import gspread
 from flask import jsonify
 
+
 from utils import (
     clean_tail_command, clean_value_expression, remove_spaces,
     get_member_sheet, safe_update_cell, delete_row,
@@ -23,40 +24,6 @@ from utils.utils_search import find_all_members_from_sheet
 from  utils.text_cleaner import build_member_query
 
 from utils.utils_search import find_member_in_text
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

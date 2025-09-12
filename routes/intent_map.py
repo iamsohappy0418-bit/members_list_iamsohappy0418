@@ -1,6 +1,6 @@
 from routes.routes_member import (
     search_member_func, register_member_func, update_member_func,
-    save_member_func, delete_member_func, search_by_code_logic
+    save_member_func, delete_member_func, search_by_code_logic, member_select
 )
 from routes.routes_memo import (
     memo_save_auto_func, add_counseling_func,
@@ -16,6 +16,7 @@ from routes.routes_commission import (
 # 회원 관련
 MEMBER_INTENTS = {
     "search_member": search_member_func,
+    "select_member": member_select,         # 전체정보 / 종료
     "register_member": register_member_func,
     "update_member": update_member_func,
     "save_member": save_member_func,
@@ -62,3 +63,6 @@ INTENT_MAP = {
     **ORDER_INTENTS,
     **COMMISSION_INTENTS,
 }
+
+
+

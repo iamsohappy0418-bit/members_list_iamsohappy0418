@@ -264,6 +264,60 @@ def find_member_logic():
         return {"status": "error", "message": str(e), "http_status": 500}
 
 
+from flask import request, jsonify, session
+
+
+
+
+
+def member_select():
+    """
+    회원 전체정보/종료 선택 처리 함수
+    - choice=1 → 전체정보
+    - choice=2 → 종료
+    - 자연어 "종료" → choice=2 로 매핑
+    """
+    data = request.json or {}
+    choice = str(data.get("choice", "")).strip()
+
+    # 자연어 → 숫자 매핑
+    if choice in ["종료", "끝", "exit", "quit"]:
+        choice = "2"
+    elif choice in ["전체정보", "상세", "detail", "info"]:
+        choice = "1"
+
+    # 세션에서 마지막 검색 결과 가져오기
+    results = session.get("last_search_results", [])
+
+    if not results:
+        return {
+            "status": "error",
+            "message": "이전에 검색된 결과가 없습니다. 먼저 /member/search 를 호출해주세요.",
+            "http_status": 400
+        }
+
+    if choice == "1":
+        return {
+            "status": "success",
+            "message": "전체정보를 표시합니다.",
+            "results": results,
+            "http_status": 200
+        }
+    elif choice == "2":
+        session.pop("last_search_results", None)  # 세션 초기화
+        return {
+            "status": "success",
+            "message": "종료합니다.",
+            "http_status": 200
+        }
+    else:
+        return {
+            "status": "error",
+            "message": "잘못된 선택입니다. 1 또는 2를 입력하거나 '전체정보' 또는 '종료'라고 입력해주세요.",
+            "http_status": 400
+        }
+
+
 
 
 # ======================================================================================

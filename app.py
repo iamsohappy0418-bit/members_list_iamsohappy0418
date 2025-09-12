@@ -82,6 +82,10 @@ from service import (
 from utils.text_cleaner import normalize_code_query
 from parser import guess_intent, preprocess_user_input
 from utils import clean_member_query
+from routes.routes_member import member_select
+
+
+
 
 
 
@@ -302,13 +306,8 @@ def post_intent():
         text = ""
     text = text.strip()
 
-
-
-
     if not text:
         return jsonify({"status": "error", "message": "❌ text 또는 query 필드가 필요합니다."}), 400
-
-
 
     # ✅ 회원 관련 액션 단어 제거 (조회/검색/등록/수정/삭제 등)
     text = clean_member_query(text)
@@ -446,9 +445,6 @@ def nlu_to_pc_input(text: str) -> dict:
         # 회원명 못 찾으면 raw_text만 전달
         return {"intent": "register_member", "query": {"raw_text": text}}
 
-
-
-
     # 회원 수정
     if any(word in text for word in ["수정", "회원수정", "회원변경", "회원 수정", "회원 변경"]):
         # 케이스1: "<이름> 수정 <내용>"
@@ -485,9 +481,6 @@ def nlu_to_pc_input(text: str) -> dict:
 
         # fallback
         return {"intent": "update_member", "query": {"raw_text": text}}
-
-
-
 
 
 
@@ -532,7 +525,6 @@ def nlu_to_pc_input(text: str) -> dict:
     # 단순 이름
     if re.fullmatch(r"[가-힣]{2,4}", text):
         return {"intent": "search_member", "query": {"회원명": text}}
-
 
 
     # -------------------------------
@@ -612,19 +604,6 @@ def nlu_to_pc_input(text: str) -> dict:
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 # @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 
 # ======================================================================================
@@ -635,8 +614,8 @@ def nlu_to_pc_input(text: str) -> dict:
 def member_route():
     """
     회원 관련 API (intent 기반 단일 라우트)
-    - before_request 에서 g.query["intent"] 세팅됨
-    - 자연어 입력이면 postIntent로 우회
+    - g.query["intent"] 가 있으면 그대로 실행
+    - 없으면 자연어 입력 분석해서 search_member / select_member 자동 분기
     """
     # g.query 안전 체크
     data = getattr(g, "query", {}) or {}
@@ -645,10 +624,20 @@ def member_route():
     # ✅ intent가 없을 때만 자연어 판별 로직 적용
     if not intent:
         if isinstance(data.get("query"), str) and not any(k in data for k in ("회원명", "회원번호")):
-            # 자연어면 postIntent로 강제 우회
-            return post_intent()
+            query_text = data.get("query", "").strip()
 
-    # 그 외에는 기존 intent 흐름 사용
+            # ✅ 자연어 자동 분기
+            if "전체정보" in query_text or query_text in ["1", "상세", "detail", "info"]:
+                intent = "select_member"
+                g.query["choice"] = "1"
+            elif "종료" in query_text or query_text in ["2", "끝", "exit", "quit"]:
+                intent = "select_member"
+                g.query["choice"] = "2"
+            else:
+                # 그 외는 자연어 intent 처리기로 우회
+                return post_intent()
+
+    # ✅ intent 기반 실행
     func = MEMBER_INTENTS.get(intent)
 
     if not func:
@@ -661,6 +650,7 @@ def member_route():
         result = func()
 
     return jsonify(result), result.get("http_status", 200)
+
 
 
 
