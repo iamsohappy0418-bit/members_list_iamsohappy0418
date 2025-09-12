@@ -86,6 +86,7 @@ from utils import clean_member_query
 from routes.routes_member import member_select
 from routes.routes_member import search_member_func
 from routes.routes_member import member_select_direct
+from routes.routes_member import find_member_logic
 
 
 
@@ -327,11 +328,22 @@ def post_intent():
                 member_name = name_match.group(0)
                 print(f"[AUTO] 세션 없이 '{member_name}' 자동 검색 시도")
 
-                results = search_member_func(member_name)
+
+
+                # ✅ 요약 아님 → 전체정보용
+                results = find_member_logic(member_name)
                 if results.get("status") == "success":
-                    return jsonify(member_select_direct(results["results"])), 200
+                    return jsonify({
+                        "status": "success",
+                        "message": "회원 전체정보입니다.",
+                        "results": results["results"],
+                        "http_status": 200
+                    }), 200
                 else:
                     return jsonify(results), results.get("http_status", 400)
+
+
+
 
             return jsonify({
                 "status": "error",

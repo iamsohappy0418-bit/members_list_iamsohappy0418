@@ -80,31 +80,46 @@ def _line(d: dict) -> str:
 # ────────────────────────────────────────────────────────────────────
 def search_member_func(name):
     """
-    회원 검색 허브 함수 (라우트 아님)
-    - g.query["query"] 가 str이면 '코드...' 여부로 분기
-    - 그 외는 find_member_logic()로 처리
-    - 결과에 http_status 추가(성공:200 / 실패:400)
+    이름으로 검색 → 요약 정보만 출력 + g.query["last_name"] 저장
     """
     try:
-        query = g.query.get("query", None)
-        if query is None:
-            return {"status": "error", "message": "검색어(query)가 필요합니다.", "http_status": 400}
+        if not name or not isinstance(name, str):
+            return {"status": "error", "message": "회원 이름(name)이 필요합니다.", "http_status": 400}
 
-        # 원본 텍스트 저장
-        g.query["raw_text"] = query if isinstance(query, str) else str(query)
+        result = find_member_logic(name)
 
-        # '코드...' 패턴이면 코드 검색으로
-        if isinstance(query, str) and (query.startswith("코드") or query.lower().startswith("code")):
-            result = search_by_code_logic()
-        else:
-            result = find_member_logic()
+        if result.get("status") != "success":
+            return {**result, "http_status": 404}
 
-        http_status = 200 if isinstance(result, dict) and result.get("status") == "success" else 400
-        return {**result, "http_status": http_status}
+        members = result.get("results", [])
+        if not members:
+            return {"status": "error", "message": f"{name}에 해당하는 회원이 없습니다.", "http_status": 404}
+
+        # ✅ 이름 기억 (전체정보용)
+        g.query["last_name"] = name
+
+        # ✅ 요약 정보만
+        member = members[0]
+        summary = {
+            "회원명": member.get("회원명"),
+            "회원번호": member.get("회원번호"),
+            "특수번호": member.get("특수번호"),
+            "코드": member.get("코드"),
+            "메모": member.get("메모"),
+        }
+
+        return {
+            "status": "success",
+            "message": f"{name}님의 요약 정보입니다. '전체정보'를 입력하시면 상세 내용을 볼 수 있습니다.",
+            "summary": summary,
+            "http_status": 200
+        }
 
     except Exception as e:
         import traceback; traceback.print_exc()
         return {"status": "error", "message": str(e), "http_status": 500}
+
+
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -178,7 +193,7 @@ def search_by_code_logic():
 # ────────────────────────────────────────────────────────────────────
 # 3) 일반 검색: 이름/회원번호/휴대폰/특수번호/부분매칭
 # ────────────────────────────────────────────────────────────────────
-def find_member_logic():
+def find_member_logic(name=None):
     """
     일반 회원 검색
     - g.query["query"] 가 dict 또는 str
@@ -186,7 +201,7 @@ def find_member_logic():
       str  예: "홍길동" / "1234567" / "01012345678" / "특수번호 A1"
     """
     try:
-        q = g.query.get("query")
+        q = name if name is not None else g.query.get("query")
         rows = get_rows_from_sheet("DB")  # list[dict]
 
         # 1) 검색 키 추출
