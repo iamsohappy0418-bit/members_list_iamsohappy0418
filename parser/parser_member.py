@@ -46,7 +46,7 @@ def extract_referrer(text: str) -> Optional[str]:
 # ======================================================================================
 # ✅ 등록 파서
 # ======================================================================================
-import re
+
 from typing import Optional, Tuple
 
 def parse_registration(text: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:

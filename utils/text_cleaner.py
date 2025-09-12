@@ -57,7 +57,7 @@ def clean_value_expression(text: str) -> str:
 # ======================================================================================
 # ✅ 본문 정제 (회원명/불필요 단어 제거)
 # ======================================================================================
-import re
+
 
 def clean_content(text: str, member_name: str = None) -> str:
     """
@@ -118,27 +118,38 @@ def normalize_code_query(text: str) -> str:
 
 
 # utils/text_cleaner.py
-
 def clean_member_query(text: str) -> str:
     """
-    회원 관련 요청문에서 불필요한 액션 단어(조회/검색/등록/수정/삭제 등) 제거
+    회원 관련 요청문에서 불필요한 액션 단어 제거
+    (조회/검색/등록/수정/삭제/탈퇴/추가 등)
     """
     if not isinstance(text, str):
         return ""
 
-    text = text.strip()
+    original = text.strip()
+    cleaned = original
 
     tokens_to_remove = [
-        "회원조회", "회원 조회", "회원검색", "조회", "검색",
+        "회원조회", "회원 조회", "회원검색", "회원 검색", "조회", "검색",
         "회원수정", "회원 수정", "수정",
         "회원삭제", "회원 삭제", "삭제", "탈퇴",
-        "회원등록", "회원 등록", "회원추가","회원 추가", "등록", "추가"
+        "회원등록", "회원 등록", "회원추가", "회원 추가", "등록", "추가"
     ]
 
+    removed_tokens = []
     for token in tokens_to_remove:
-        if token in text:
-            text = text.replace(token, "").strip()
+        if token in cleaned:
+            cleaned = cleaned.replace(token, "").strip()
+            removed_tokens.append(token)
 
-    return text
+    # ✅ 디버그 로그 출력
+    if removed_tokens:
+        print(f"[clean_member_query] 원문: '{original}'")
+        print(f"[clean_member_query] 제거된 토큰: {removed_tokens}")
+        print(f"[clean_member_query] 최종 query: '{cleaned}'")
+
+    return cleaned
+
+
 
 

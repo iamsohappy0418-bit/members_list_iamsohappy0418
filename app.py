@@ -252,27 +252,34 @@ def preprocess_input():
 
 
 
-def preprocess_member_query(user_input: str) -> str:
+def preprocess_member_query(text: str) -> str:
     """
-    사용자가 입력한 문자열을 intent 매핑에 맞게 보정하는 함수
+    회원 검색용 전처리
+    - 회원번호, 휴대폰, 한글 이름 감지
+    - 단순히 감지만 하고, 불필요한 단어는 붙이지 않는다
     """
-    text = user_input.strip()
-
-    # 1. 회원번호 (숫자만 입력된 경우)
+    # 1. 회원번호
     if text.isdigit():
-        return f"회원검색 {text}"
+        result = text
+        print(f"[preprocess_member_query] 회원번호 감지 → {result}")
+        return result
 
-    # 2. 휴대폰 번호 (010-xxxx-xxxx 또는 010xxxxxxxx 패턴)
+    # 2. 휴대폰 번호
     phone_pattern = r"^010[-]?\d{4}[-]?\d{4}$"
     if re.match(phone_pattern, text):
-        return f"회원검색 {text}"
+        result = text
+        print(f"[preprocess_member_query] 휴대폰번호 감지 → {result}")
+        return result
 
     # 3. 한글 이름 (2~4자)
     name_pattern = r"^[가-힣]{2,4}$"
     if re.match(name_pattern, text):
-        return f"회원검색 {text}"
+        result = text
+        print(f"[preprocess_member_query] 한글이름 감지 → {result}")
+        return result
 
-    # 4. 기본: 보정 없이 그대로 반환
+    # 4. 기본 (변경 없음)
+    print(f"[preprocess_member_query] 보정 없음 → {text}")
     return text
 
 
@@ -305,7 +312,7 @@ def post_intent():
 
     # ✅ 회원 관련 액션 단어 제거 (조회/검색/등록/수정/삭제 등)
     text = clean_member_query(text)
-    # ✅ 회원 관련 액션 단어 제거 (조회/검색/등록/수정/삭제 등)
+    # ✅ 보정 로직 적용 (이름/번호 단독 입력 시 '회원검색'으로 변환)
     text = preprocess_member_query(text)
 
 

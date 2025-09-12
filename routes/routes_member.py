@@ -27,26 +27,46 @@ SHEET_NAME_DB = "DB"  # 매직스트링 방지
 def _norm(s):
     return (s or "").strip()
 
+
+
+
 def _digits(s):
     return re.sub(r"\D", "", s or "")
 
+
+
 def _compact_row(r: dict) -> dict:
-    out = {
+    """회원 정보를 compact dict 형태로 반환 (DB 시트 기준)"""
+    return {
         "회원명": r.get("회원명", ""),
         "회원번호": r.get("회원번호", ""),
+        "특수번호": r.get("특수번호", ""),
         "코드": r.get("코드", ""),
-        "휴대폰번호": r.get("휴대폰번호", ""),
+        "생년월일": r.get("생년월일", ""),
+        "계보도": r.get("계보도", ""),
+        "근무처": r.get("근무처", ""),
+        "주소": r.get("주소", ""),
+        "메모": r.get("메모", ""),
     }
-    if "특수번호" in r:
-        out["특수번호"] = r.get("특수번호", "")
-    return out
+
 
 def _line(d: dict) -> str:
-    parts = []
-    if d.get("회원번호"): parts.append(f"회원번호: {d['회원번호']}")
-    if d.get("특수번호"): parts.append(f"특수번호: {d['특수번호']}")
-    if d.get("휴대폰번호"): parts.append(f"휴대폰: {d['휴대폰번호']}")
-    return f"{d.get('회원명','')} ({', '.join(parts)})" if parts else d.get("회원명","")
+    """사람이 읽기 좋은 한 줄 요약 (모든 필드 표시)"""
+    parts = [
+        f"회원번호: {d.get('회원번호','')}",
+        f"특수번호: {d.get('특수번호','')}",
+        f"코드: {d.get('코드','')}",
+        f"생년월일: {d.get('생년월일','')}",
+        f"계보도: {d.get('계보도','')}",        
+        f"근무처: {d.get('근무처','')}",
+        f"주소: {d.get('주소','')}",
+        f"메모: {d.get('메모','')}",
+    ]
+    # 값이 없는 항목은 제외
+    parts = [p for p in parts if not p.endswith(": ")]
+    return f"{d.get('회원명','')} ({', '.join(parts)})"
+
+
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -217,7 +237,7 @@ def find_member_logic():
         matched = [r for r in rows if match_row(r)]
         matched.sort(key=lambda r: _norm(r.get("회원명", "")))
 
-        results = [_compact_row(r) for r in matched]
+        results = [_(r) for r in matched]
         display = [_line(d) for d in results]
 
         return {
