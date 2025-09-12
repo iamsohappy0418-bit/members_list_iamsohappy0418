@@ -237,8 +237,9 @@ def find_member_logic():
         matched = [r for r in rows if match_row(r)]
         matched.sort(key=lambda r: _norm(r.get("회원명", "")))
 
-        results = [_(r) for r in matched]
+        results = [_compact_row(r) for r in matched]
         display = [_line(d) for d in results]
+
 
         return {
             "status": "success",
