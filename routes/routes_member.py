@@ -65,7 +65,7 @@ def _line(d: dict) -> str:
         f"메모: {d.get('메모','')}",
     ]
     # 값이 없는 항목은 제외
-    parts = [p for p in parts if not p.endswith(": ")]
+    # parts = [p for p in parts if not p.endswith(": ")]
     return f"{d.get('회원명','')} ({', '.join(parts)})"
 
 
@@ -306,7 +306,7 @@ def member_select():
 
     if choice in ["종료", "끝", "exit", "quit"]:
         choice = "2"
-    elif choice in ["전체정보", "상세", "detail", "info"]:
+    elif choice in ["전체정보", "전체", "1", "상세", "detail", "info"]:
         choice = "1"
 
     results = session.get("last_search_results", [])
