@@ -52,21 +52,48 @@ def _compact_row(r: dict) -> OrderedDict:
     ])
 
 
-def _line(d: dict) -> str:
-    """사람이 읽기 좋은 한 줄 요약 (모든 필드 표시)"""
+
+
+
+
+
+def _normalize_summary(row: dict) -> dict:
+    """
+    원본 row(dict)에서 필요한 필드를 뽑아 summary(dict)로 정규화
+    """
+    return {
+        "회원명": row.get("회원명", "").strip(),
+        "회원번호": row.get("회원번호", "").strip(),
+        "특수번호": row.get("특수번호", "").strip(),
+        "코드": row.get("코드", "").strip().upper(),
+        "생년월일": row.get("생년월일", "").strip(),
+        "계보도": row.get("계보도", "").strip(),
+        "근무처": row.get("근무처", "").strip(),
+        "주소": row.get("주소", "").strip(),
+        "메모": row.get("메모", "").strip(),
+    }
+
+
+def _line(summary: dict) -> str:
+    """
+    사람이 읽기 좋은 한 줄 요약 (정규화된 summary 사용)
+    """
     parts = [
-        f"회원번호: {d.get('회원번호','')}",
-        f"특수번호: {d.get('특수번호','')}",
-        f"코드: {d.get('코드','')}",
-        f"생년월일: {d.get('생년월일','')}",
-        f"계보도: {d.get('계보도','')}",        
-        f"근무처: {d.get('근무처','')}",
-        f"주소: {d.get('주소','')}",
-        f"메모: {d.get('메모','')}",
+        f"회원번호: {summary['회원번호']}",
+        f"특수번호: {summary['특수번호']}",
+        f"코드: {summary['코드']}",
+        f"생년월일: {summary['생년월일']}",
+        f"계보도: {summary['계보도']}",
+        f"근무처: {summary['근무처']}",
+        f"주소: {summary['주소']}",
+        f"메모: {summary['메모']}",
     ]
     # 값이 없는 항목은 제외
-    # parts = [p for p in parts if not p.endswith(": ")]
-    return f"{d.get('회원명','')} ({', '.join(parts)})"
+    parts = [p for p in parts if not p.endswith(": ")]
+    return f"{summary['회원명']} ({', '.join(parts)})"
+
+
+
 
 
 
@@ -151,7 +178,8 @@ def search_by_code_logic():
 
         # ✅ 코드 컬럼 필터링
         matched = [r for r in rows if str(r.get("코드", "")).strip().upper() == code_value]
-       
+        matched.sort(key=lambda r: str(r.get("회원명", "")).strip())
+
        
         # 🔽 여기서 디버깅 로그 찍기
         print("=== DEBUG search_by_code_logic ===")
@@ -163,13 +191,15 @@ def search_by_code_logic():
              
        
         matched.sort(key=lambda r: str(r.get("회원명", "")).strip())
-
         print("=== DEBUG REGEX ===", "text:", text, "m:", m)   # 👈 여기에 추가
 
 
 
-        results = [_compact_row(r) for r in matched]
-        display = [_line(d) for d in results]
+        # ✅ summary 정규화 → display 변환
+        results = [_normalize_summary(r) for r in matched]
+        display = [_line(s) for s in results]
+
+
 
         return {
             "status": "success",

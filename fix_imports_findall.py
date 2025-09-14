@@ -5,7 +5,7 @@ import re
 
 # 정확히 교체할 대상 (import 구문 전체 문자열 기준)
 
-OLD = r"from parser.parser import"
+OLD = r"normalize_summary"
 
 # NEW = r"query_multi"
 
