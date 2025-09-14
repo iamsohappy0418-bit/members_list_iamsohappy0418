@@ -14,6 +14,7 @@ from .routes_member import (
     find_member_logic,
     member_select_direct,
     member_select,
+    call_member,
 
     # 정보 출력
     sort_fields_by_field_map,
@@ -69,8 +70,7 @@ __all__ = [
     "search_member_func", "search_by_code_logic", "find_member_logic",
     "member_select_direct", "member_select",
     "sort_fields_by_field_map", "get_full_member_info",
-    "get_summary_info", "get_compact_info",
-
+    "get_summary_info", "get_compact_info", "call_member",
     # 회원 등록/수정/저장
     "register_member_func", "update_member_func", "save_member_func",
 

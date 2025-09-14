@@ -77,6 +77,7 @@ from utils import (
 from routes import (
     # 회원
     search_member_func,
+    call_member,
     register_member_func,
     update_member_func,
     save_member_func,
@@ -667,44 +668,32 @@ def nlu_to_pc_input(text: str) -> dict:
 @app.route("/member", methods=["POST"])
 def member_route():
     """
-    회원 관련 API (intent 기반 단일 라우트)
-    - g.query["intent"] 가 있으면 그대로 실행
-    - 없으면 자연어 입력 분석해서 search_member / select_member 자동 분기
+    Member API 엔드포인트
+    - 이름(query)으로 회원 검색 후 search_member_func 같은 포맷 반환
     """
-    # g.query 안전 체크
-    data = getattr(g, "query", {}) or {}
-    intent = data.get("intent")
+    try:
+        data = request.get_json(force=True)
+        name = data.get("query")
 
-    # ✅ intent가 없을 때만 자연어 판별 로직 적용
-    if not intent:
-        if isinstance(data.get("query"), str) and not any(k in data for k in ("회원명", "회원번호")):
-            query_text = data.get("query", "").strip()
+        if not name:
+            return jsonify({
+                "status": "error",
+                "message": "query 값이 필요합니다.",
+                "http_status": 400
+            }), 400
 
-            # ✅ 자연어 자동 분기
-            if "전체정보" in query_text or query_text in ["1", "상세", "detail", "info"]:
-                intent = "select_member"
-                g.query["choice"] = "1"
-            elif "종료" in query_text or query_text in ["2", "끝", "exit", "quit"]:
-                intent = "select_member"
-                g.query["choice"] = "2"
-            else:
-                # 그 외는 자연어 intent 처리기로 우회
-                return post_intent()
+        # ✅ call_member 사용 → search_member_func 같은 응답 포맷 보장
+        result = call_member(name)
 
-    # ✅ intent 기반 실행
-    func = MEMBER_INTENTS.get(intent)
+        return jsonify(result), result.get("http_status", 200)
 
-    if not func:
-        result = {
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({
             "status": "error",
-            "message": f"❌ 처리할 수 없는 회원 intent입니다. (intent={intent})",
-            "http_status": 400
-        }
-    else:
-        result = func()
-
-    return jsonify(result), result.get("http_status", 200)
-
+            "message": str(e),
+            "http_status": 500
+        }), 500
 
 
 
