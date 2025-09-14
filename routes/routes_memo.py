@@ -1,8 +1,9 @@
 # routes/memos.py
 import re
 from flask import g
-from service import save_memo, search_memo_core, find_memo, handle_search_memo
-from parser.parser_memo import parse_memo
+from parser.parse import save_memo, parse_memo, search_memo_core, find_memo
+from utils import handle_search_memo
+
 
 
 
@@ -60,26 +61,55 @@ def memo_find_auto_func():
 # ────────────────────────────────────────────────────────────────────
 # 2) 자연어 메모 저장
 # ────────────────────────────────────────────────────────────────────
-def memo_save_auto_func():
+def memo_save_auto_func(text: str):
     """
-    자연어 메모 저장 (업서트 느낌)
-    - g.query의 raw_text 또는 query에서 텍스트를 추출하여 저장
+    자연어 문장을 받아 상담일지/개인일지/활동일지에 자동 저장
     """
     try:
-        text = _get_text_from_g()
-        if not text:
-            return {"status": "error", "message": "메모 내용이 없습니다.", "http_status": 400}
+        parts = text.strip().split(maxsplit=3)
 
-        res = save_memo(text)
-        ok = (res or {}).get("status") in {"ok", "success", True}
-        return {
-            "status": "success" if ok else "error",
-            "intent": "memo_save_auto",
-            "http_status": 201 if ok else 400
+        if len(parts) < 4:
+            return {
+                "status": "error",
+                "message": f"❌ 입력 문장에서 회원명/일지종류/내용을 추출할 수 없습니다. (입력={text})",
+                "http_status": 400,
+            }
+
+        # ✅ 파싱
+        member_name = parts[0]       # 이태수
+        diary_type = parts[1]        # 상담일지 / 개인일지 / 활동일지
+        command = parts[2]           # 저장 (무시)
+        content = parts[3]           # 오늘은 좋은 날씨
+
+        # ✅ 시트명 매핑
+        sheet_map = {
+            "상담일지": "상담일지",
+            "개인일지": "개인일지",
+            "활동일지": "활동일지",
         }
+        sheet_name = sheet_map.get(diary_type)
+        if not sheet_name:
+            return {
+                "status": "error",
+                "message": f"❌ 지원하지 않는 일지 종류입니다. (입력={diary_type})",
+                "http_status": 400,
+            }
+
+        res = save_memo(sheet_name, member_name, content)
+        return {"status": "success", "result": res, "http_status": 200}
+
     except Exception as e:
-        import traceback; traceback.print_exc()
-        return {"status": "error", "message": str(e), "http_status": 500}
+        import traceback
+        traceback.print_exc()
+        return {
+            "status": "error",
+            "message": f"메모 저장 중 오류: {str(e)}",
+            "http_status": 500,
+        }
+
+
+
+
 
 # ────────────────────────────────────────────────────────────────────
 # 3) 자연어 기반 메모 검색

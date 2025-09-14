@@ -1,78 +1,83 @@
 """
-parser 패키지 초기화 파일
+parser 패키지 초기화
 공식적으로 공개되는 파서 함수만 __all__에 정의
 """
 
 # --------------------------
-# 회원 관련 파서
+# intent / 전처리
 # --------------------------
-from .parser_member import (
-    parse_registration,
-    parse_request_and_update,
-    parse_natural_query,
-    parse_deletion_request,
+from .parse import (
+    field_map,
+    INTENT_RULES,
+    guess_intent,
+   
 )
 
 # --------------------------
-# 주문 관련 파서
+# 회원 관련 파서
 # --------------------------
-from .parse_order import (
-    parse_order_text,
-    parse_order_text_rule,
-    parse_order_from_text,
+from .parse import (
+    extract_value, parse_field_value,
+    extract_phone, extract_member_number,
+    extract_password, extract_referrer,
+    parse_registration,
+    infer_field_from_value, parse_request_and_update,
+    parse_natural_query, parse_korean_phone,
+    parse_member_number, parse_request,
+    parse_deletion_request, parse_deletion_request_compat,
+    parse_conditions,
+    preprocess_user_input,
 )
 
 # --------------------------
 # 메모 관련 파서
 # --------------------------
-from .parser_memo import (
-    parse_memo,
+from .parse import (
     parse_request_line,
+    parse_memo,
+)
+
+# --------------------------
+# 주문 관련 파서
+# --------------------------
+from .parse import (
+    parse_order_text,
+    ensure_orders_list,
+    parse_order_text_rule,
 )
 
 # --------------------------
 # 후원수당 관련 파서
 # --------------------------
-from .parser_commission import (
-    parse_commission,
+from .parse import (
     process_date,
     clean_commission_data,
+    parse_commission,
 )
 
-from .parse_intent import guess_intent, preprocess_user_input
-
-
-# --------------------------
-# 필드 맵
-# --------------------------
-from .field_map import field_map
-
 
 # --------------------------------------------------
-# 공식 공개 API 목록 (__all__)
+# 공식 공개 API (__all__)
 # --------------------------------------------------
 __all__ = [
-    # 회원
-    "parse_registration",
-    "parse_request_and_update",
-    "parse_natural_query",
-    "parse_deletion_request",
-    # 주문
-    "parse_order_text",
-    "parse_order_text_rule",
-    "parse_order_from_text",
-    # 메모
-    "parse_memo",
-    "parse_request_line",
-    # 후원수당
-    "parse_commission",
-    "process_date",
-    "clean_commission_data",
-    # 필드 맵
-    "field_map",
-    # Intent
-    "guess_intent",
+    # intent
+    "field_map", "INTENT_RULES", "guess_intent", "utils",
+
+    # 회원 파서
+    "extract_value", "parse_field_value", "extract_phone", "extract_member_number",
+    "extract_password", "extract_referrer", "parse_registration",
+    "infer_field_from_value", "parse_request_and_update",
+    "parse_natural_query", "parse_korean_phone", "parse_member_number",
+    "parse_request", "parse_deletion_request", "parse_deletion_request_compat",
+    "parse_conditions",
     "preprocess_user_input",
+
+    # 메모 파서
+    "parse_request_line", "parse_memo",
+
+    # 주문 파서
+    "parse_order_text", "ensure_orders_list", "parse_order_text_rule",
+
+    # 후원수당 파서
+    "process_date", "clean_commission_data", "parse_commission",
 ]
-
-

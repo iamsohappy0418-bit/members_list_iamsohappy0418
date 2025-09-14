@@ -1,20 +1,27 @@
-# ===== stdlib =====
+# =================================================
+# 표준 라이브러리
+# =================================================
 import os
 import re
 import json
 import traceback
-from flask import g
-from datetime import datetime, timedelta, timezone
-import inspect
+import unicodedata
+import inspect   # ✅ 이거 추가
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional, Tuple
 
 
 
-# ===== 3rd party =====
+# =================================================
+# 외부 라이브러리
+# =================================================
 import requests
 from flask import Flask, request, jsonify, Response, g, send_from_directory
 from flask_cors import CORS
 
-# ===== project: config =====
+# =================================================
+# 프로젝트: config
+# =================================================
 from config import (
     API_URLS, HEADERS,
     GOOGLE_SHEET_TITLE, SHEET_KEY,
@@ -22,7 +29,86 @@ from config import (
     SHEET_MAP,
 )
 
-# ===== intents (마스터 및 그룹 맵만 임포트) =====
+# =================================================
+# 프로젝트: parser
+# =================================================
+from parser import (
+    guess_intent,
+    preprocess_user_input,
+)
+
+# =================================================
+# 프로젝트: service
+# =================================================
+from service import (
+    # 회원
+    find_member_internal, clean_member_data,
+    register_member_internal, update_member_internal,
+    delete_member_internal, delete_member_field_nl_internal,
+    process_member_query,
+
+    # 주문
+    addOrders, handle_order_save, handle_product_order,
+    find_order, register_order, update_order,
+    delete_order, delete_order_by_row, clean_order_data,
+    save_order_to_sheet,
+
+    # 메모
+    save_memo, find_memo, search_in_sheet, search_memo_core,
+
+    # 후원수당
+    find_commission, register_commission,
+    update_commission, delete_commission,
+)
+
+# =================================================
+# 프로젝트: utils
+# =================================================
+from utils import (
+    normalize_code_query,
+    clean_member_query,
+    now_kst, search_member, run_intent_func,
+    call_searchMemo, openai_vision_extract_orders,
+)
+
+# =================================================
+# 프로젝트: routes
+# =================================================
+from routes import (
+    # 회원
+    search_member_func,
+    register_member_func,
+    update_member_func,
+    save_member_func,
+    delete_member_func,
+    member_select,
+    member_select_direct,
+    find_member_logic,
+    sort_fields_by_field_map,
+    get_full_member_info,
+    get_summary_info,
+    get_compact_info,
+
+    # 메모
+    memo_save_auto_func,
+    add_counseling_func,
+    search_memo_func,
+    search_memo_from_text_func,
+    memo_find_auto_func,
+
+    # 주문
+    order_auto_func,
+    order_upload_func,
+    order_nl_func,
+    save_order_proxy_func,
+
+    # 후원수당
+    commission_find_auto_func,
+    find_commission_func,
+    search_commission_by_nl_func,
+)
+
+# intent 매핑은 routes.intent_map 에서만 import
 from routes.intent_map import (
     INTENT_MAP,
     MEMBER_INTENTS,
@@ -31,63 +117,10 @@ from routes.intent_map import (
     COMMISSION_INTENTS,
 )
 
-# ===== utils (공식 API만 import) =====
-from utils import (
-    # 날짜/시간
-    now_kst, process_order_date, parse_dt,
-    # 문자열 정리
-    clean_content, clean_tail_command, clean_value_expression,
-    remove_josa, remove_spaces, split_to_parts, is_match, match_condition,
-    # 시트
-    get_sheet, get_worksheet, get_member_sheet, get_product_order_sheet,
-    get_commission_sheet, get_counseling_sheet, get_personal_memo_sheet,
-    get_activity_log_sheet, append_row, update_cell, safe_update_cell,
-    delete_row, get_gsheet_data, get_rows_from_sheet,
-    # 메모
-    get_memo_results, format_memo_results, filter_results_by_member,
-    handle_search_memo,
-    # OpenAI
-    extract_order_from_uploaded_image, parse_order_from_text,
-    # 검색
-    searchMemberByNaturalText, fallback_natural_search, find_member_in_text,
 
-    run_intent_func,
-)
 
-# ===== parser =====
-from parser import (
-    parse_registration, parse_request_and_update,
-    parse_natural_query, parse_deletion_request,
-    parse_memo, parse_commission,
-    parse_order_text, parse_order_text_rule, parse_order_from_text,
-    parse_request_line, process_date, clean_commission_data,
-    field_map,
-)
 
-# ===== service =====
-from service import (
-    # 회원
-    find_member_internal, clean_member_data, register_member_internal,
-    update_member_internal, delete_member_internal,
-    delete_member_field_nl_internal, process_member_query,
-    # 주문
-    addOrders, handle_order_save, handle_product_order, find_order,
-    register_order, update_order, delete_order, delete_order_by_row,
-    clean_order_data, save_order_to_sheet,
-    # 메모
-    save_memo, find_memo, search_in_sheet, search_memo_core,
-    # 후원수당
-    find_commission, register_commission, update_commission, delete_commission,
-)
 
-from utils.text_cleaner import normalize_code_query
-from parser import guess_intent, preprocess_user_input
-from utils import clean_member_query
-from routes.routes_member import member_select
-from routes.routes_member import search_member_func
-from routes.routes_member import member_select_direct
-from routes.routes_member import find_member_logic
-from routes import get_full_member_info, get_summary_info
 
 
 
@@ -114,6 +147,8 @@ PROMPT_VERSION = os.getenv("PROMPT_VERSION")
 # Memberslist API
 # --------------------------------------------------
 MEMBERSLIST_API_URL = os.getenv("MEMBERSLIST_API_URL")
+
+
 
 
 # ✅ Flask 초기화

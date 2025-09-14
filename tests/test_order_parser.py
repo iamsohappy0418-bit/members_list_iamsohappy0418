@@ -1,6 +1,6 @@
 import pytest
 import json
-from parser.parse_order import parse_order_text, ensure_orders_list
+from parser.parse import parse_order_text, ensure_orders_list
 
 
 def test_parse_order_text_basic():

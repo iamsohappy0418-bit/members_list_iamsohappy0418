@@ -1,8 +1,9 @@
 import re
 from flask import g, request
-from parser import parse_order_from_text
+from utils import parse_order_from_text
 from utils import extract_order_from_uploaded_image
-from service import handle_product_order, save_order_to_sheet
+from parser.parse import handle_product_order, save_order_to_sheet
+
 
 
 

@@ -4,23 +4,24 @@ from collections import OrderedDict
 from flask import g, request, Response, jsonify, session
 
 # 시트/서비스/파서 의존성들
-from utils.sheets import (
+from utils import (
     get_rows_from_sheet,   # DB 시트 행 조회
     get_member_sheet,      # 회원 시트 접근
     safe_update_cell,      # 안전한 셀 수정
 )
-from service.service_member import (
+
+from parser.parse import (
     register_member_internal,        # 회원 등록
     update_member_internal,          # 회원 수정
     delete_member_internal,          # 회원 삭제
     delete_member_field_nl_internal, # 회원 필드 삭제 (자연어)
 )
-from parser import parse_registration   # 회원 등록/수정 파서
-from parser.field_map import field_map  # ✅ field_map import
-
-from parser.field_map import field_map
+from parser.parse import parse_registration   # 회원 등록/수정 파서
+from parser.parse import field_map  # ✅ field_map import
+from parser.parse import field_map
 
 SHEET_NAME_DB = "DB"  # 매직스트링 방지
+
 
 
 
@@ -33,13 +34,8 @@ SHEET_NAME_DB = "DB"  # 매직스트링 방지
 def _norm(s):
     return (s or "").strip()
 
-
-
-
 def _digits(s):
     return re.sub(r"\D", "", s or "")
-
-
 
 def _compact_row(r: dict) -> OrderedDict:
     """회원 정보를 고정된 필드 순서로 반환"""
@@ -54,7 +50,6 @@ def _compact_row(r: dict) -> OrderedDict:
         ("주소", r.get("주소", "")),
         ("메모", r.get("메모", "")),
     ])
-
 
 
 def _line(d: dict) -> str:

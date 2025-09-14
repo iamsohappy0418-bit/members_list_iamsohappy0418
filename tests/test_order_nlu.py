@@ -1,7 +1,7 @@
 import sys, os, pytest
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-from parser.parse_order import parse_order_text
+from parser.parse import parse_order_text
 
 @pytest.mark.parametrize("text,expected", [
     (
