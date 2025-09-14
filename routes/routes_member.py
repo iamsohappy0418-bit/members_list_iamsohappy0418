@@ -43,6 +43,7 @@ def _compact_row(r: dict) -> OrderedDict:
         ("회원명", r.get("회원명", "")),
         ("회원번호", r.get("회원번호", "")),
         ("특수번호", r.get("특수번호", "")),
+        ("휴대폰번호",r.get("휴대폰번호", ""))
         ("코드", r.get("코드", "")),
         ("생년월일", r.get("생년월일", "")),
         ("근무처", r.get("근무처", "")),
@@ -63,8 +64,9 @@ def _normalize_summary(row: dict) -> dict:
     """
     return {
         "회원명": row.get("회원명", "").strip(),
-        "회원번호": row.get("회원번호", "").strip(),
+        "회원번호": str(row.get("회원번호", "")).strip(),
         "특수번호": row.get("특수번호", "").strip(),
+        "휴대폰번호": row.get("휴대폰번호", "").strip(),
         "코드": row.get("코드", "").strip().upper(),
         "생년월일": row.get("생년월일", "").strip(),
         "계보도": row.get("계보도", "").strip(),
@@ -81,6 +83,7 @@ def _line(summary: dict) -> str:
     parts = [
         f"회원번호: {summary['회원번호']}",
         f"특수번호: {summary['특수번호']}",
+        f"휴대폰번호: {summary['휴대폰번호']}",
         f"코드: {summary['코드']}",
         f"생년월일: {summary['생년월일']}",
         f"계보도: {summary['계보도']}",
@@ -89,7 +92,7 @@ def _line(summary: dict) -> str:
         f"메모: {summary['메모']}",
     ]
     # 값이 없는 항목은 제외
-    parts = [p for p in parts if not p.endswith(": ")]
+    # parts = [p for p in parts if not p.endswith(": ")]
     return f"{summary['회원명']} ({', '.join(parts)})"
 
 
@@ -121,27 +124,24 @@ def search_member_func(name):
         # ✅ 이름 기억 (전체정보용)
         g.query["last_name"] = name
 
-        # ✅ 요약 정보만
+        # ✅ 정규화된 요약 정보 사용
         member = members[0]
-        summary = {
-            "회원명": member.get("회원명"),
-            "회원번호": member.get("회원번호"),
-            "특수번호": member.get("특수번호"),
-            "코드": member.get("코드"),
-            "메모": member.get("메모"),
-        }
+        summary = _normalize_summary(member)
+
+        # ✅ 사람이 읽기 좋은 한 줄 요약도 생성
+        summary_line = _line(summary)
 
         return {
             "status": "success",
             "message": f"{name}님의 요약 정보입니다. '전체정보'를 입력하시면 상세 내용을 볼 수 있습니다.",
             "summary": summary,
+            "summary_line": summary_line,
             "http_status": 200
         }
 
     except Exception as e:
         import traceback; traceback.print_exc()
         return {"status": "error", "message": str(e), "http_status": 500}
-
 
 
 

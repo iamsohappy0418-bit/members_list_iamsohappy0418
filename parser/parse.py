@@ -217,8 +217,10 @@ def preprocess_user_input(user_input: str) -> dict:
     elif "수정" in user_input:
         action = "수정"
 
-    # 4. 옵션 파싱
-    if "전체목록" in user_input or "전체" in user_input:
+    # 4. 옵션 파싱 ("전체", "전체목록", 숫자 1 → 전체정보 요청)
+    if ("전체목록" in user_input 
+        or "전체" in user_input 
+        or user_input.strip() == "1"):
         options["full_list"] = True
 
     # 5. 검색 키워드 추출
