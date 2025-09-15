@@ -3,6 +3,8 @@ import json
 from collections import OrderedDict
 from flask import g, request, Response, jsonify, session
 
+
+
 # 시트/서비스/파서 의존성들
 from utils import (
     get_rows_from_sheet,   # DB 시트 행 조회
@@ -43,7 +45,7 @@ def _compact_row(r: dict) -> OrderedDict:
         ("회원명", r.get("회원명", "")),
         ("회원번호", r.get("회원번호", "")),
         ("특수번호", r.get("특수번호", "")),
-        ("휴대폰번호",r.get("휴대폰번호", ""))
+        ("휴대폰번호",r.get("휴대폰번호", "")),
         ("코드", r.get("코드", "")),
         ("생년월일", r.get("생년월일", "")),
         ("근무처", r.get("근무처", "")),
@@ -53,6 +55,39 @@ def _compact_row(r: dict) -> OrderedDict:
     ])
 
 
+
+
+def call_member(name: str) -> dict:
+    """
+    postMember 호출 결과를 search_member_func 포맷으로 변환
+    """
+    try:
+        # 1. API 호출
+        result = postMember({"query": name})  # 🔹 실제 API 호출 함수에 맞게 수정
+
+        if result.get("status") != "success":
+            return {**result, "http_status": 404}
+
+        # 2. 회원 데이터 가져오기
+        summary_raw = result.get("summary") or {}
+        
+        # 3. 정규화된 summary 만들기
+        summary = _normalize_summary(summary_raw)
+
+        # 4. 사람이 읽기 좋은 한 줄 요약
+        summary_line = _line(summary)
+
+        return {
+            "status": "success",
+            "message": f"{summary['회원명']}님의 요약 정보입니다. '전체정보' 또는 1을 입력하시면 상세 내용을 볼 수 있습니다.",
+            "summary": summary,
+            "summary_line": summary_line,
+            "http_status": 200
+        }
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return {"status": "error", "message": str(e), "http_status": 500}
 
 
 
