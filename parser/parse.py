@@ -56,7 +56,7 @@ from utils import (
 )
 
 
-
+from utils.sheets import get_order_sheet
 
 
 
@@ -114,7 +114,7 @@ INTENT_RULES = {
     ("회원", "등록"): "register_member",
     ("회원", "추가"): "register_member",
     ("회원", "수정"): "update_member",
-    ("회원", "저장"): "save_member",
+
     ("회원", "삭제"): "delete_member",
     ("회원", "탈퇴"): "delete_member",
     ("코드", "검색"): "search_by_code_logic",
@@ -128,6 +128,11 @@ INTENT_RULES = {
 
 
     # 메모/일지 관련
+    ("상담일지", "저장"): "memo_save_auto_func",
+    ("메모", "저장"): "memo_save_auto_func",
+    ("개인일지", "저장"): "memo_save_auto_func",
+    ("활동일지", "저장"): "memo_save_auto_func",
+
     ("일지", "저장"): "memo_add",
     ("상담일지", "추가"): "add_counseling",
     ("일지", "검색"): "memo_search",
@@ -135,16 +140,34 @@ INTENT_RULES = {
     ("검색", "자연어"): "search_memo_from_text",
     ("일지", "자동"): "memo_find_auto",
 
+    # 메모 검색
+    ("개인일지", "검색"): "search_memo_func",
+    ("상담일지", "검색"): "search_memo_func",
+    ("활동일지", "검색"): "search_memo_func",
+    ("전체메모", "검색"): "search_memo_func",
+    ("메모", "검색"): "search_memo_func",
+
+ 
+    ("상담일지",): "add_counseling",
+
+
     # 주문 관련
     ("주문", "자동"): "order_auto",
     ("주문", "업로드"): "order_upload",
     ("주문", "자연어"): "order_nl",
     ("주문", "저장"): "save_order_proxy",
+    ("제품", "주문"): "handle_product_order",
+    ("주문",): "handle_product_order",
+    ("카드", "주문"): "handle_product_order",
+
+
 
     # 후원수당 관련
     ("수당", "찾기"): "commission_find",
     ("수당", "자동"): "commission_find_auto",
     ("수당", "자연어"): "search_commission_by_nl",
+
+    ("회원", "저장"): "save_member",
 }
 
 
@@ -166,7 +189,7 @@ def guess_intent(query: str) -> str:
     if re.fullmatch(r"[가-힣]{2,4}", query):
         return "search_member"
 
-    # ✅ 기존 규칙 검사 (INTENT_RULES 기반)
+    # ✅ 기존 규칙 검사 ( 기반)
     for keywords, intent in INTENT_RULES.items():
         if all(kw in query for kw in keywords):
             return intent
@@ -854,23 +877,21 @@ def clean_member_data(data: dict) -> dict:
 
 
 
-def register_member_internal(name: str, number: str = "", phone: str = ""):
-    """
-    회원 등록/조회 내부 로직
-    - name: 회원명 (필수)
-    - number: 회원번호 (선택, 있으면 중복 체크)
-    - phone: 휴대폰번호 (선택)
-    """
+
+
+
+
+def parse_registration_internal(name: str, number: str = "", phone: str = ""):
     sheet = get_member_sheet()
     headers = sheet.row_values(1)
     rows = sheet.get_all_records()
 
     # ✅ 기존 회원 여부 확인
     for row in rows:
-        row_name = str(row.get("회원명", "")).strip()
-        row_number = str(row.get("회원번호", "")).strip()
+        # ⚠️ 반드시 str()로 감싸야 int → 문자열 변환
+        row_name = str(row.get("회원명") or "").strip()
+        row_number = str(row.get("회원번호") or "").strip()
 
-        # 1) 회원명 + 회원번호가 동시에 같은 경우 → 동일인
         if name == row_name and number and number == row_number:
             return {
                 "status": "exists",
@@ -878,7 +899,6 @@ def register_member_internal(name: str, number: str = "", phone: str = ""):
                 "data": row
             }
 
-        # 2) 회원번호가 같은데 이름이 다른 경우 → 중복 번호 에러
         if number and number == row_number and name != row_name:
             return {
                 "status": "error",
@@ -904,83 +924,6 @@ def register_member_internal(name: str, number: str = "", phone: str = ""):
             "휴대폰번호": phone
         }
     }
-
-
-
-
-def update_member_internal(요청문, 회원명=None, 필드=None, 값=None):
-    """
-    회원 수정 서비스 함수
-    - 요청문 기반 자유 수정 + 필드 기반 직접 수정 지원
-    """
-    try:
-        ws = get_member_sheet()
-
-        # 우선 회원명 확인
-        if not 회원명:
-            # 요청문 안에서 추출 시도
-            m = re.match(r"([가-힣]{2,4})", 요청문)
-            if m:
-                회원명 = m.group(1)
-
-        if not 회원명:
-            return {
-                "status": "error",
-                "message": "❌ 회원명을 찾을 수 없습니다.",
-                "http_status": 400
-            }
-
-        # 1️⃣ 필드 & 값이 명확히 지정된 경우 → 해당 컬럼 업데이트
-        if 필드 and 값:
-            headers = ws.row_values(1)
-            if 필드 not in headers:
-                return {
-                    "status": "error",
-                    "message": f"❌ 시트에 '{필드}' 컬럼이 없습니다.",
-                    "http_status": 400
-                }
-
-            # 회원명으로 행 찾기
-            rows = ws.get_all_records()
-            target_row = None
-            for idx, row in enumerate(rows, start=2):  # 헤더는 1행
-                if row.get("회원명") == 회원명:
-                    target_row = idx
-                    break
-
-            if not target_row:
-                return {
-                    "status": "error",
-                    "message": f"❌ '{회원명}' 회원을 찾을 수 없습니다.",
-                    "http_status": 404
-                }
-
-            col_idx = headers.index(필드) + 1
-            ws.update_cell(target_row, col_idx, 값)
-
-            return {
-                "status": "success",
-                "message": f"✅ {회원명}님의 {필드}가 '{값}'으로 수정되었습니다.",
-                "http_status": 200
-            }
-
-        # 2️⃣ 일반 요청문 처리 (필드 추출 못한 경우 → fallback)
-        # TODO: NLP 파싱/규칙 기반 업데이트 로직 추가 가능
-        return {
-            "status": "success",
-            "message": f"요청 처리 완료: {요청문}",
-            "http_status": 200
-        }
-
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return {
-            "status": "error",
-            "message": str(e),
-            "http_status": 500
-        }
-
 
 
 

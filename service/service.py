@@ -33,7 +33,7 @@ from utils import (
 
     # 시트 접근
     get_sheet, get_worksheet, get_rows_from_sheet,
-    get_member_sheet, get_product_order_sheet,
+    get_member_sheet, 
     get_counseling_sheet, get_personal_memo_sheet,
     get_activity_log_sheet, get_commission_sheet,
     safe_update_cell, delete_row,
@@ -41,6 +41,8 @@ from utils import (
     # 검색
     find_all_members_from_sheet, fallback_natural_search,
     is_match, match_condition,
+
+    get_order_sheet, 
 )
 
 
@@ -127,18 +129,45 @@ def register_member_internal(name: str, number: str = "", phone: str = ""):
     sheet = get_member_sheet()
     headers = sheet.row_values(1)
     rows = sheet.get_all_records()
+
+    # ✅ 기존 회원 여부 확인
     for row in rows:
-        row_name, row_number = row.get("회원명", "").strip(), row.get("회원번호", "").strip()
+        # ⚠️ 반드시 str()로 감싸야 int → 문자열 변환
+        row_name = str(row.get("회원명") or "").strip()
+        row_number = str(row.get("회원번호") or "").strip()
+
         if name == row_name and number and number == row_number:
-            return {"status": "exists", "message": f"{name} ({number})님은 이미 등록된 회원입니다.", "data": row}
+            return {
+                "status": "exists",
+                "message": f"{name} ({number})님은 이미 등록된 회원입니다.",
+                "data": row
+            }
+
         if number and number == row_number and name != row_name:
-            return {"status": "error", "message": f"⚠️ 회원번호 {number}는 이미 '{row_name}'님에게 등록되어 있습니다."}
+            return {
+                "status": "error",
+                "message": f"⚠️ 회원번호 {number}는 이미 '{row_name}'님에게 등록되어 있습니다."
+            }
+
+    # ✅ 신규 등록
     new_row = [""] * len(headers)
-    if "회원명" in headers: new_row[headers.index("회원명")] = name
-    if "회원번호" in headers and number: new_row[headers.index("회원번호")] = number
-    if "휴대폰번호" in headers and phone: new_row[headers.index("휴대폰번호")] = phone
+    if "회원명" in headers:
+        new_row[headers.index("회원명")] = name
+    if "회원번호" in headers and number:
+        new_row[headers.index("회원번호")] = number
+    if "휴대폰번호" in headers and phone:
+        new_row[headers.index("휴대폰번호")] = phone
+
     sheet.insert_row(new_row, 2)
-    return {"status": "created", "message": f"{name} 회원 신규 등록 완료", "data": {"회원명": name, "회원번호": number, "휴대폰번호": phone}}
+    return {
+        "status": "created",
+        "message": f"{name} 회원 신규 등록 완료",
+        "data": {
+            "회원명": name,
+            "회원번호": number,
+            "휴대폰번호": phone
+        }
+    }
 
 
 def update_member_internal(요청문, 회원명=None, 필드=None, 값=None):

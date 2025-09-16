@@ -672,16 +672,66 @@ def member_route():
     - g.query["intent"] 가 있으면 그대로 실행
     - 없으면 자연어 입력 분석해서 search_member / select_member 자동 분기
     """
-    # g.query 안전 체크
-    data = getattr(g, "query", {}) or {}
+    data = request.get_json(silent=True) or {}
+    g.query = data
     intent = data.get("intent")
 
-    # ✅ intent가 없을 때만 자연어 판별 로직 적용
+
+
+
+
+    
+
+    # ✅ (1) intent 직접 지정 지원
+    if intent and intent in MEMBER_INTENTS:
+        func = MEMBER_INTENTS[intent]
+
+        # --- 인자별 호출 방식 분기 ---
+        if intent == "search_member":
+            # 회원명 기반 검색
+            name = (
+                data.get("회원명")
+                or data.get("name")
+                or data.get("member_name")
+                or data.get("query")
+                or ""
+            )
+            result = func(name)
+
+        elif intent in ("register_member", "update_member", "save_member"):
+            # 등록/수정/저장은 JSON payload 통째로 넘김
+            result = func(data)
+
+        elif intent in ("delete_member", "delete_member_field_nl_func"):
+            # 삭제도 payload 기반
+            result = func(data)
+
+        elif intent == "search_by_code_logic":
+            # 코드 검색은 코드값만 추출
+            code = data.get("코드") or data.get("code") or ""
+            result = func(code)
+
+        elif intent in ("member_select", "select_member"):
+            # 선택 플로우 (choice 필드 기반)
+            choice = data.get("choice") or g.query.get("choice", "")
+            result = func(choice)
+
+        elif intent == "summary_member":
+            result = func()
+        elif intent == "compact_member":
+            result = func()
+        else:
+            # 인자 필요 없는 경우
+            result = func()
+
+        return jsonify(result), result.get("http_status", 200)
+
+    # ✅ (2) intent가 없을 때 → 자연어 기반 자동 분기
     if not intent:
         if isinstance(data.get("query"), str) and not any(k in data for k in ("회원명", "회원번호")):
             query_text = data.get("query", "").strip()
 
-            # ✅ 자연어 자동 분기
+            # 자연어 자동 분기
             if "전체정보" in query_text or query_text in ["1", "상세", "detail", "info"]:
                 intent = "select_member"
                 g.query["choice"] = "1"
@@ -689,24 +739,21 @@ def member_route():
                 intent = "select_member"
                 g.query["choice"] = "2"
             else:
-                # 그 외는 자연어 intent 처리기로 우회
+                # 그 외는 자연어 intent 처리기로 위임
                 return post_intent()
 
-    # ✅ intent 기반 실행
+    # ✅ (3) intent 기반 실행 (fallback)
     func = MEMBER_INTENTS.get(intent)
-
     if not func:
         result = {
             "status": "error",
             "message": f"❌ 처리할 수 없는 회원 intent입니다. (intent={intent})",
-            "http_status": 400
+            "http_status": 400,
         }
     else:
         result = func()
 
     return jsonify(result), result.get("http_status", 200)
-
-
 
 
 

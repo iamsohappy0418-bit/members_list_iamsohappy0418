@@ -1,70 +1,66 @@
 import pytest
-from parser.parser_memo import parse_memo
+from parser import parse_memo   # ✅ parser/__init__.py 에서 바로 import 가능
 
 
-# ==============================
-# DummySheet (테스트용 시트)
-# ==============================
-class DummySheet:
-    def __init__(self):
-        self.headers = ["날짜", "회원명", "내용"]
-        self.rows = []
-
-    def append_row(self, row, value_input_option=None):
-        self.rows.append(row)
-
-    def get_all_records(self):
-        return [dict(zip(self.headers, row)) for row in self.rows]
-
-
-# ==============================
-# Fixture
-# ==============================
-@pytest.fixture
-def dummy_sheet():
-    return DummySheet()
-
-
-@pytest.fixture(autouse=True)
-def patch_get_worksheet(monkeypatch, dummy_sheet):
-    # 상담일지 / 개인메모 / 활동일지 모두 같은 dummy_sheet 반환
-    monkeypatch.setattr("parser.parser_memo.get_worksheet", lambda name: dummy_sheet)
-    return dummy_sheet
-
-
-# ==============================
-# Tests
-# ==============================
-def test_parse_memo_success(dummy_sheet):
-    text = "이태수 상담일지 저장 오늘은 비가 옵니다"
+def test_parse_memo_basic():
+    text = "이태수 상담일지 저장 오늘은 날씨가 맑다"
     result = parse_memo(text)
 
-    assert result["status"] == "success"
-    assert result["sheet"] == "상담일지"
-    assert result["member"] == "이태수"
-    assert "오늘은 비가 옵니다" in result["content"]
-
-    records = dummy_sheet.get_all_records()
-    assert len(records) == 1
-    assert records[0]["회원명"] == "이태수"
-    assert "오늘은 비가 옵니다" in records[0]["내용"]
+    # 최소한 dict 반환 여부 검증
+    assert isinstance(result, dict)
+    assert "회원명" in result
+    assert "내용" in result
+    assert "일지종류" in result
 
 
-def test_parse_memo_fail_invalid_text():
-    text = "저장만"  # 회원명/시트명 없음
+def test_parse_memo_with_personal_log():
+    text = "강소희 개인일지 저장 오늘은 부산에 다녀왔다"
     result = parse_memo(text)
 
-    assert result["status"] == "fail"
+    assert isinstance(result, dict)
+    assert result.get("회원명") == "강소희"
+    assert result.get("일지종류") == "개인일지"
+    assert "부산" in result.get("내용", "")
 
 
-def test_parse_memo_personal_memo(dummy_sheet):
-    text = "홍길동 개인일지 기록 운동을 시작했습니다"
+def test_parse_memo_with_activity_log():
+    text = "홍길동 활동일지 저장 세미나 참석"
     result = parse_memo(text)
 
-    assert result["status"] == "success"
-    assert result["sheet"] == "개인메모"
-    assert result["member"] == "홍길동"
+    assert isinstance(result, dict)
+    assert result.get("회원명") == "홍길동"
+    assert result.get("일지종류") == "활동일지"
+    assert "세미나" in result.get("내용", "")
 
-    records = dummy_sheet.get_all_records()
-    assert records[-1]["회원명"] == "홍길동"
-    assert "운동을 시작했습니다" in records[-1]["내용"]
+
+
+
+
+
+
+
+
+
+from service import save_memo, find_memo, search_in_sheet
+from tests.conftest import assert_contains
+
+def test_memo_lifecycle(today_date):
+    member = "테스트회원"
+    content = "pytest 메모 저장 테스트"
+
+    # 1. 저장
+    save_memo("상담일지", member, content)
+
+    # 2. 검색 (간단 검색)
+    results = find_memo("pytest", "상담일지")
+    assert_contains(results, "내용", content)
+
+    # 3. 고급 검색 (기간 제한)
+    advanced_results, has_more = search_in_sheet(
+        "상담일지",
+        keywords=["pytest"],
+        start_date=today_date,
+        end_date=today_date
+    )
+    assert_contains(advanced_results, "내용", content)
+

@@ -12,12 +12,15 @@ from utils import (
     safe_update_cell,      # 안전한 셀 수정
 )
 
-from parser.parse import (
+from service import (
     register_member_internal,        # 회원 등록
     update_member_internal,          # 회원 수정
     delete_member_internal,          # 회원 삭제
     delete_member_field_nl_internal, # 회원 필드 삭제 (자연어)
 )
+
+
+
 from parser.parse import parse_registration   # 회원 등록/수정 파서
 from parser.parse import field_map  # ✅ field_map import
 from parser.parse import field_map

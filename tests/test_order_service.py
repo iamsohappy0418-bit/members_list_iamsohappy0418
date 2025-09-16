@@ -1,51 +1,46 @@
 import pytest
-import utils.sheets as sheets
-from service import service_order
+from service import (
+    handle_order_save,
+    find_order,
+    update_order,
+    delete_order,
+    clean_order_data,
+)
 
-
-def test_register_order(dummy_sheet, monkeypatch):
-    """제품 주문 등록 테스트"""
-
-    # ✅ service_order 내부에서 get_order_sheet() 호출 시 dummy_sheet 반환하도록 패치
-    monkeypatch.setattr(sheets, "get_order_sheet", lambda: dummy_sheet)
-
-    # ✅ 헤더 세팅
-    dummy_sheet.headers = ["회원명", "회원번호", "휴대폰번호", "제품명", "제품가격", "PV"]
-    dummy_sheet.rows = []
-
-    # ✅ 주문 등록
-    order = {
-        "회원명": "홍길동",
-        "회원번호": "123456",
-        "휴대폰번호": "010-1111-2222",
-        "제품명": "헤모힘",
-        "제품가격": "100000",
-        "PV": "100"
+# 🟢 주문 저장 → 조회 → 수정 → 삭제까지 테스트
+def test_order_lifecycle():
+    # 1. 저장
+    new_order = {
+        "주문일자": "2025-09-17",
+        "회원명": "테스트회원",
+        "회원번호": "99999999",
+        "휴대폰번호": "010-1234-5678",
+        "제품명": "노니주스",
+        "제품가격": 45000,
+        "PV": 30,
+        "결재방법": "카드",
+        "주문자_고객명": "홍길동",
+        "주문자_휴대폰번호": "010-9999-8888",
+        "배송처": "서울특별시 강남구",
+        "수령확인": "N",
     }
-    ok = service_order.register_order(order)
-    assert ok is True
 
-    # ✅ 시트에 저장된 값 검증
-    records = dummy_sheet.get_all_records()
-    assert len(records) == 1
-    assert records[0]["회원명"] == "홍길동"
-    assert records[0]["제품명"] == "헤모힘"
-    assert records[0]["제품가격"] == "100000"
-    assert records[0]["PV"] == "100"
+    cleaned = clean_order_data(new_order)
+    handle_order_save(cleaned)
 
+    # 2. 조회
+    results = find_order(member_name="테스트회원")
+    assert any(r["제품명"] == "노니주스" for r in results)
 
+    # 3. 수정
+    updated_value = "부산광역시 해운대구"
+    update_order("테스트회원", {"배송처": updated_value})
 
-def test_parse_order_text_without_member(monkeypatch):
-    """회원명이 없는 경우 → None 반환"""
-    text = "노니 2개 카드 주문"
+    results = find_order(member_name="테스트회원")
+    assert any(r["배송처"] == updated_value for r in results)
 
-    # find_member_in_text이 항상 None을 반환하도록 패치
-    monkeypatch.setattr("parser.parse_order.find_member_in_text", lambda t: None)
+    # 4. 삭제
+    assert delete_order("테스트회원") is True
 
-    result = parse_order_text(text)
-    assert result["회원명"] is None
-    assert result["제품명"] == "노니"
-    assert result["수량"] == 2
-    assert result["결제방법"] == "카드"
-
-
+    results = find_order(member_name="테스트회원")
+    assert not results

@@ -168,6 +168,9 @@ def get_member_sheet():
 def get_product_order_sheet():
     return get_worksheet("제품주문")
 
+def get_order_sheet():
+    return get_worksheet("제품주문")
+
 def get_counseling_sheet():
     return get_worksheet("상담일지")
 
@@ -380,6 +383,10 @@ def get_all(ws):
 # 주문
 def get_product_order_sheet():
     return get_worksheet("제품주문")
+
+def get_order_sheet():
+    return get_worksheet("제품주문")
+
 
 # alias (호환성 유지)
 get_order_sheet = get_product_order_sheet
