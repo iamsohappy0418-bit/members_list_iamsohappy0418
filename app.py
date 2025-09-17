@@ -82,6 +82,7 @@ from routes import (
     update_member_func,
     save_member_func,
     delete_member_func,
+    delete_member_field_nl_func,
     member_select,
     member_select_direct,
     find_member_logic,
@@ -430,6 +431,27 @@ def guess_intent_entry():
     # 2. intent 추출
     intent = guess_intent(normalized_query)
 
+    # 🔹 "회원명 + 삭제 + 필드명" 패턴 감지 → 필드삭제 전용 intent
+    if not intent or intent == "unknown":
+        if "삭제" in normalized_query:
+            parts = normalized_query.split()
+            if len(parts) >= 3:  # 회원명 + 필드명 + 삭제
+                intent = "delete_member_field_nl_func"
+            elif len(parts) >= 2:  # 회원명 + 삭제
+                intent = "delete_member"
+
+
+
+    # 🔹 등록/삭제/수정 키워드 보강 (추가)
+    if not intent or intent == "unknown":
+        if normalized_query.endswith("등록"):
+            intent = "register_member"
+        elif normalized_query.endswith("삭제"):
+            intent = "delete_member"
+        elif normalized_query.endswith("수정"):
+            intent = "update_member"
+
+
     if not intent or intent == "unknown":
         return jsonify({"status": "error", "message": f"❌ intent를 추출할 수 없습니다. (query={normalized_query})"}), 400
 
@@ -676,11 +698,7 @@ def member_route():
     g.query = data
     intent = data.get("intent")
 
-
-
-
-
-    
+   
 
     # ✅ (1) intent 직접 지정 지원
     if intent and intent in MEMBER_INTENTS:
@@ -699,12 +717,12 @@ def member_route():
             result = func(name)
 
         elif intent in ("register_member", "update_member", "save_member"):
-            # 등록/수정/저장은 JSON payload 통째로 넘김
+            # 등록/수정/저장은 g.query 내부에서 처리 → 인자 없음
             result = func(data)
 
         elif intent in ("delete_member", "delete_member_field_nl_func"):
-            # 삭제도 payload 기반
-            result = func(data)
+            # 삭제도 g.query 내부에서 처리 → 인자 없음
+            result = func()
 
         elif intent == "search_by_code_logic":
             # 코드 검색은 코드값만 추출
@@ -731,8 +749,28 @@ def member_route():
         if isinstance(data.get("query"), str) and not any(k in data for k in ("회원명", "회원번호")):
             query_text = data.get("query", "").strip()
 
+
+
+
             # 자연어 자동 분기
-            if "전체정보" in query_text or query_text in ["1", "상세", "detail", "info"]:
+            if query_text.endswith("등록"):
+                intent = "register_member"
+            elif query_text.endswith("수정"):
+                intent = "update_member"
+            elif "삭제" in query_text:
+                # 🔹 "회원명 + 삭제 + 필드명" → 필드 삭제 전용 intent
+                #    "회원명 + 삭제" 만 있는 경우 → 회원 전체 삭제
+                parts = query_text.split()
+                if len(parts) >= 3:  # 회원명 + 필드명 + 삭제
+                    intent = "delete_member_field_nl_func"
+                else:
+                    intent = "delete_member"
+
+
+
+
+            # 🔹 상세정보/종료
+            elif "전체정보" in query_text or query_text in ["1", "상세", "detail", "info"]:
                 intent = "select_member"
                 g.query["choice"] = "1"
             elif "종료" in query_text or query_text in ["2", "끝", "exit", "quit"]:
@@ -741,6 +779,7 @@ def member_route():
             else:
                 # 그 외는 자연어 intent 처리기로 위임
                 return post_intent()
+
 
     # ✅ (3) intent 기반 실행 (fallback)
     func = MEMBER_INTENTS.get(intent)
@@ -760,6 +799,13 @@ def member_route():
 # ======================================================================================
 # ✅ 일지 & 메모 (자동 분기) intent 기반 단일 라우트
 # ======================================================================================
+from flask import request, jsonify
+from flask import g
+
+# intent 매핑 (이미 선언되어 있다고 가정)
+# from routes.intent_map import MEMO_INTENTS
+# from routes.routes_memo import (post_intent, ...)
+
 @app.route("/memo", methods=["POST"])
 def memo_route():
     """
@@ -768,7 +814,13 @@ def memo_route():
     - JSON 입력은 구조 분석 → 저장 / 검색 분기
     """
     try:
-        data = getattr(g, "query", {}) or {}
+        # ✅ g.query 우선, 없으면 request.get_json() 사용
+        data = getattr(g, "query", None)
+        if not data:
+            data = request.get_json(silent=True) or {}
+
+        # g.query에 반드시 저장 → search/add 함수들이 공통으로 참조
+        g.query = data
 
         # ✅ 자연어 입력(문자열) → post_intent 우회
         if isinstance(data, str):
@@ -780,9 +832,9 @@ def memo_route():
         # intent가 없는 경우 JSON 구조로 자동 판별
         if not intent:
             if all(k in data for k in ("회원명", "내용", "일지종류")):
-                intent = "memo_save_auto_func"
+                intent = "memo_add"
             elif "keywords" in data and "일지종류" in data:
-                intent = "search_memo_func"
+                intent = "memo_search"
 
         func = MEMO_INTENTS.get(intent)
 
@@ -793,10 +845,22 @@ def memo_route():
                 "http_status": 400
             }
         else:
-            result = func()
+            # ✅ intent별로 호출 방식 분리
+            if intent == "memo_add":
+                # 자연어 저장 → 문자열(text) 필요
+                text = data.get("text") if isinstance(data, dict) else data
+                result = memo_save_auto_func(text)
+            elif intent == "add_counseling":
+                # JSON 저장 → g.query 기반 처리
+                result = add_counseling_func()
+            else:
+                # 검색 계열 등은 g.query 기반 처리
+                result = func()
 
+        # ✅ 반환 형식 처리
         if isinstance(result, dict):
             return jsonify(result), result.get("http_status", 200)
+
         if isinstance(result, list):
             return jsonify(result), 200
 
@@ -807,8 +871,10 @@ def memo_route():
         traceback.print_exc()
         return jsonify({
             "status": "error",
-            "message": f"메모 처리 중 오류 발생: {str(e)}"
+            "message": f"메모 처리 중 오류 발생: {str(e)}",
+            "http_status": 500
         }), 500
+
 
     
 
@@ -950,6 +1016,7 @@ def commission_route():
 
 
 
+# 정상
 
 
 # 잘작동

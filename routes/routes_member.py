@@ -499,10 +499,20 @@ def register_member_func():
     📌 설명:
     - 자연어 요청문: "회원등록 이판주 12345678 010-2759-9001"
     - JSON 입력: {"회원명": "이판주", "회원번호": "12345678", "휴대폰번호": "010-2759-9001"}
+    - JSON 입력(간단): {"회원명": "이판주"}
+    - JSON 입력(중간): {"회원명": "이판주", "회원번호": "12345678"}
     """
     try:
-        query = g.query.get("query")
-        raw_text = g.query.get("raw_text")
+        # ✅ query 감싸진 구조와 일반 dict 모두 지원
+        if hasattr(g, "query") and isinstance(g.query, dict):
+            if "query" in g.query and isinstance(g.query["query"], dict):
+                query = g.query["query"]
+            else:
+                query = g.query
+        else:
+            query = {}
+
+        raw_text = g.query.get("raw_text") if hasattr(g, "query") else None
 
         name, number, phone = "", "", ""
 
@@ -519,9 +529,12 @@ def register_member_func():
 
         # 2) JSON 입력 방식
         if isinstance(query, dict):
-            name = query.get("회원명", name).strip()
-            number = query.get("회원번호", number).strip()
-            phone = query.get("휴대폰번호", phone).strip()
+            if query.get("회원명"):
+                name = query.get("회원명", name).strip()
+            if query.get("회원번호"):
+                number = query.get("회원번호", number).strip()
+            if query.get("휴대폰번호"):
+                phone = query.get("휴대폰번호", phone).strip()
 
         if not name:
             return {
@@ -553,47 +566,106 @@ def register_member_func():
 # ======================================================================================
 # ✅ 회원 수정
 # ======================================================================================
-def update_member_func():
+def update_member_func(data: dict):
     """
-    회원 수정 함수 (라우트 아님)
-    📌 설명:
-    - g.query["query"] 또는 raw_text 에서 요청문을 추출하여 회원 정보를 수정
-    - 자연어 요청문 예: "홍길동 주소 부산 해운대구로 변경"
-    - JSON 입력 예: {"요청문": "홍길동 주소 부산 해운대구로 변경"}
+    회원 정보 수정 함수 (확장판)
+    - 여러 필드 한꺼번에 수정 가능
+    - 회원번호/휴대폰번호/특수번호는 숫자 패턴으로 자동 인식
+    - 동일 회원 여러 명 → choice로 특정
     """
     try:
-        query = g.query.get("query") if hasattr(g, "query") else None
-        raw_text = g.query.get("raw_text") if hasattr(g, "query") else None
+        query = data.get("query", {})
+        name = query.get("회원명", "").strip()
+        choice = query.get("choice")
 
-        요청문 = ""
-        if isinstance(query, dict):
-            요청문 = (query.get("요청문") or "").strip()
-        elif isinstance(query, str):
-            요청문 = query.strip()
+        # 🔹 1. 업데이트 필드 추출
+        updates = {}
+        for k, v in query.items():
+            if k in ("회원명", "choice"):
+                continue
+            if not v:
+                continue
 
-        if not 요청문 and raw_text:
-            요청문 = raw_text.strip()
+            val = str(v).strip()
 
-        if not 요청문:
+            # 🔹 숫자 패턴 기반 필드 자동 인식
+            if re.fullmatch(r"(010-\d{3,4}-\d{4}|\d{10,11})", val):
+                updates["휴대폰번호"] = val
+            elif re.fullmatch(r"\d{5,8}", val):
+                updates["회원번호"] = val
+            elif re.fullmatch(r"\d{9,}", val):  # 예: 특수번호 긴 숫자
+                updates["특수번호"] = val
+            else:
+                updates[k] = val
+
+        if not name:
+            return {"status": "error", "message": "회원명은 필수 입력 항목입니다.", "http_status": 400}
+        if not updates:
+            return {"status": "error", "message": "수정할 필드가 없습니다.", "http_status": 400}
+
+        # 🔹 2. 대상 회원 찾기
+        sheet = get_member_sheet()
+        rows = sheet.get_all_records()
+        matches = [r for r in rows if str(r.get("회원명", "")).strip() == name]
+
+        if not matches:
+            return {"status": "error", "message": f"{name} 회원을 찾을 수 없습니다.", "http_status": 404}
+
+        if len(matches) > 1 and not choice:
+            # 후보 리스트 제공
+            candidates = []
+            for i, r in enumerate(matches, start=1):
+                candidates.append({
+                    "번호": i,
+                    "회원명": r.get("회원명"),
+                    "회원번호": r.get("회원번호"),
+                    "휴대폰번호": r.get("휴대폰번호"),
+                    "특수번호": r.get("특수번호")
+                })
             return {
-                "status": "error",
-                "message": "요청문이 비어 있습니다.",
-                "http_status": 400
+                "status": "select_required",
+                "message": f"{name} 회원이 여러 명 발견되었습니다. choice 번호를 선택하세요.",
+                "candidates": candidates,
+                "http_status": 200
             }
 
-        result = update_member_internal(요청문)
-        return {**result, "http_status": 200}
+        # 🔹 3. choice 반영
+        if len(matches) > 1:
+            try:
+                idx = int(choice) - 1
+                if idx < 0 or idx >= len(matches):
+                    return {"status": "error", "message": "유효하지 않은 choice 번호입니다.", "http_status": 400}
+                target = matches[idx]
+            except Exception:
+                return {"status": "error", "message": "choice 번호는 정수여야 합니다.", "http_status": 400}
+        else:
+            target = matches[0]
 
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
+        # 🔹 4. 실제 수정
+        row_idx = rows.index(target) + 2  # 헤더 고려
+        header = list(rows[0].keys())
+        updated_log = {}
+
+        for field, new_value in updates.items():
+            if field not in header:
+                continue
+            col_idx = header.index(field) + 1
+            old_value = sheet.cell(row_idx, col_idx).value
+            sheet.update_cell(row_idx, col_idx, "")          # 먼저 공란 처리
+            sheet.update_cell(row_idx, col_idx, new_value)   # 새 값 입력
+            updated_log[field] = {"old": old_value, "new": new_value}
+
         return {
-            "status": "error",
-            "message": str(e),
-            "http_status": 500
+            "status": "success",
+            "message": f"{name} 회원 정보가 수정되었습니다.",
+            "updated_fields": updated_log,
+            "http_status": 200
         }
 
-    
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return {"status": "error", "message": str(e), "http_status": 500}
+
 
 
 
@@ -704,24 +776,24 @@ def save_member_func():
 # ======================================================================================
 # ✅ 회원 삭제 API
 # ======================================================================================
-def delete_member_func():
+def delete_member_func(data=None):
     """
-    회원 전체 삭제 함수 (라우트 아님)
-    📌 설명:
-    - 회원명을 기준으로 DB 시트에서 전체 행을 삭제합니다.
-    - before_request 에서 g.query 에 값이 세팅되어 있어야 함.
-    📥 입력(JSON 예시):
-    {
-      "회원명": "홍길동"
-    }
+    회원 삭제 함수
     """
     try:
-        query = g.query.get("query") if hasattr(g, "query") else None
+        query = data or getattr(g, "query", {})
 
-        if isinstance(query, dict):
-            name = (query.get("회원명") or "").strip()
-        else:
-            name = (query or "").strip()
+        # query 중첩 처리
+        if isinstance(query, dict) and "query" in query and isinstance(query["query"], dict):
+            query = query["query"]
+
+        name = (
+            query.get("회원명")
+            or query.get("name")
+            or query.get("member_name")
+            or ""
+        ).strip()
+        choice = str(query.get("choice", "")).strip()  # 선택번호(문자열 처리)
 
         if not name:
             return {
@@ -730,12 +802,69 @@ def delete_member_func():
                 "http_status": 400
             }
 
-        result, status = delete_member_internal(name)
-        return {**result, "http_status": status}
+        # ✅ DB 시트에서 이름으로 검색
+        rows = get_rows_from_sheet("DB")
+        matches = [
+            r for r in rows
+            if str(r.get("회원명", "")).strip() == name
+        ]
+
+        if not matches:
+            return {
+                "status": "error",
+                "message": f"{name} 회원을 찾을 수 없습니다.",
+                "http_status": 404
+            }
+
+        # ✅ 동일인 다수일 때 → 리스트 반환
+        if len(matches) > 1 and not choice:
+            numbered = [
+                {"번호": i + 1, "회원명": r.get("회원명"), "회원번호": r.get("회원번호"), "휴대폰번호": r.get("휴대폰번호")}
+                for i, r in enumerate(matches)
+            ]
+            return {
+                "status": "pending",
+                "message": f"{name} 회원이 여러 명 존재합니다. 삭제할 번호(choice)를 선택하세요.",
+                "candidates": numbered,
+                "http_status": 200
+            }
+
+        # ✅ choice 입력받은 경우
+        if len(matches) > 1 and choice:
+            try:
+                idx = int(choice) - 1
+                target = matches[idx]
+            except (ValueError, IndexError):
+                return {
+                    "status": "error",
+                    "message": f"유효하지 않은 choice 값입니다. (1 ~ {len(matches)} 중 선택)",
+                    "http_status": 400
+                }
+        else:
+            target = matches[0]
+
+        member_number = target.get("회원번호", "")
+        result = delete_member_internal(name, member_number)
+
+        # ✅ dict / tuple / bool 대응
+        if isinstance(result, dict):
+            return {**result, "http_status": result.get("http_status", 200)}
+        elif isinstance(result, tuple):
+            status, message = result
+            return {
+                "status": status,
+                "message": message,
+                "http_status": 200 if status in ("ok", "success") else 400
+            }
+        else:
+            return {
+                "status": "success" if result else "error",
+                "message": f"{name} ({member_number}) 회원 삭제 {'완료' if result else '실패'}",
+                "http_status": 200 if result else 400
+            }
 
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        import traceback; traceback.print_exc()
         return {
             "status": "error",
             "message": str(e),
@@ -746,35 +875,273 @@ def delete_member_func():
 
 
 
+
+
+
+
+
+
 # ======================================================================================
 # ✅ 자연어 요청 회원 삭제 라우트
 # ======================================================================================
-def delete_member_field_nl_func():
-    """
-    회원 필드 삭제 (자연어 기반)
-    📌 설명:
-    - 자연어 문장에서 특정 필드를 추출하여 해당 회원의 일부 필드를 삭제합니다.
-    - '회원명', '회원번호'는 삭제 불가 (삭제 요청 자체를 막음)
-    - '홍길동 삭제' → 전체 삭제 방지 (별도 API /delete_member 사용)
+import re
+from flask import g
+from utils.sheets import get_member_sheet, safe_update_cell
 
-    📥 입력(JSON 예시):
-    {
-      "요청문": "이판여 주소랑 휴대폰번호 삭제"
-    }
+# DB 시트의 컬럼 헤더 (회원 필드)
+MEMBER_FIELDS = [
+    "회원명", "회원번호", "휴대폰번호", "비밀번호", "가입일자", "생년월일", "통신사", "친밀도",
+    "근무처", "계보도", "소개한분", "주소", "메모", "코드", "카드사", "카드주인", "카드번호",
+    "유효기간", "비번", "카드생년월일", "분류", "회원단계", "연령/성별", "직업", "가족관계",
+    "니즈", "애용제품", "콘텐츠", "습관챌린지", "비즈니스시스템", "GLC프로젝트", "리더님"
+]
+
+
+
+def format_phone(value: str) -> str:
+    """휴대폰번호 포맷: 010xxxxxxxx → 010-xxxx-xxxx"""
+    digits = re.sub(r"\D", "", value or "")
+    if re.fullmatch(r"010\d{8}", digits):
+        return f"{digits[:3]}-{digits[3:7]}-{digits[7:]}"
+    return value.strip()  # 그대로 반환 (포맷 이미 있으면 그대로)
+
+
+def update_member_func(data: dict = None):
+    """
+    회원 정보 수정 (자연어/JSON 요청 지원)
+    - 여러 필드 동시 수정 가능
+    - 동일 이름 회원 존재 시 choice 로 특정 회원만 수정
+    - 회원번호, 휴대폰번호, 특수번호는 숫자 패턴으로 자동 인식
+    - 수정 시 기존 값을 공란("")으로 지운 후 새 값 입력
     """
     try:
-        req = request.get_json(force=True)
-        text = (req.get("요청문") or "").strip()
+        # --------------------------
+        # 1. 입력 데이터 확보
+        # --------------------------
+        query = {}
+        if hasattr(g, "query") and isinstance(g.query, dict):
+            query.update(g.query)
+        if data and isinstance(data, dict):
+            query.update(data)
+            if "query" in data and isinstance(data["query"], dict):
+                query.update(data["query"])   # ✅ 중첩 query 병합
 
-        if not text:
-            return {"status": "error", "message": "요청문을 입력해야 합니다.", "http_status": 400}
+        raw_text = query.get("query", "")
+        member_name = query.get("회원명")
 
-        result, status = delete_member_field_nl_internal(text)
-        return {**result, "http_status": status}
+        # --------------------------
+        # 2. 수정할 필드/값 추출
+        # --------------------------
+        updates = {}
+
+        for field in MEMBER_FIELDS:
+            if field in query:
+                updates[field] = query[field]
+
+        # 숫자 기반 판별 (회원번호, 휴대폰번호)
+        for k, v in query.items():
+            if isinstance(v, str):
+                digits = re.sub(r"\D", "", v)
+                if digits:
+                    if re.fullmatch(r"\d{5,8}", digits):
+                        updates["회원번호"] = digits
+                    elif re.fullmatch(r"010\d{8}", digits):
+                        updates["휴대폰번호"] = format_phone(v)  # ✅ 포맷 적용 저장
+
+
+
+
+
+        if not member_name:
+            return {"status": "error", "message": "❌ 회원명이 필요합니다.", "http_status": 400}
+
+        if not updates:
+            return {"status": "error", "message": "❌ 수정할 필드가 없습니다.", "http_status": 400}
+
+        # --------------------------
+        # 3. 회원 시트 불러오기
+        # --------------------------
+        sheet = get_member_sheet()
+        rows = sheet.get_all_records()
+        headers = sheet.row_values(1)
+
+        # --------------------------
+        # 4. 동일 이름 회원 검색
+        # --------------------------
+        candidates = []
+        for idx, row in enumerate(rows, start=2):
+            if str(row.get("회원명", "")).strip() == member_name.strip():
+                candidates.append((idx, row))
+
+        if not candidates:
+            return {"status": "error", "message": f"❌ 회원 '{member_name}'을(를) 찾을 수 없습니다.", "http_status": 404}
+
+        # --------------------------
+        # 5. choice 처리 (동명이인 대응)
+        # --------------------------
+        choice = query.get("choice")
+        if len(candidates) > 1 and not choice:
+            return {
+                "status": "need_choice",
+                "message": f"⚠️ 동일 이름 회원 '{member_name}'이(가) {len(candidates)}명 있습니다. 번호를 선택하세요.",
+                "candidates": [
+                    {
+                        "choice": i + 1,
+                        "회원명": row.get("회원명"),
+                        "회원번호": row.get("회원번호"),
+                        "휴대폰번호": row.get("휴대폰번호"),
+                    }
+                    for i, (_, row) in enumerate(candidates)
+                ],
+                "http_status": 200,
+            }
+
+        if len(candidates) == 1:
+            target_row = candidates[0][0]
+        else:
+            try:
+                target_row = candidates[int(choice) - 1][0]
+            except Exception:
+                return {"status": "error", "message": "❌ 올바른 choice 번호를 선택하세요.", "http_status": 400}
+
+        # --------------------------
+        # 6. 기존 값 공란 처리 후 새 값 입력
+        # --------------------------
+        for field, value in updates.items():
+            if field in headers:
+                col = headers.index(field) + 1
+                safe_update_cell(sheet, target_row, col, "")   # 기존 값 비우기
+                safe_update_cell(sheet, target_row, col, value)  # 새 값 입력
+
+        return {
+            "status": "success",
+            "message": f"✅ 회원 [{member_name}] 수정 완료",
+            "updated_fields": updates,
+            "http_status": 200,
+        }
 
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        import traceback; traceback.print_exc()
         return {"status": "error", "message": str(e), "http_status": 500}
+
+
+
+
+
+
+
+
+
+
+
+# routes/routes_member.py
+import re
+from flask import g
+from utils.sheets import get_member_sheet, safe_update_cell
+
+MEMBER_FIELDS = [
+    "회원명", "회원번호", "휴대폰번호", "비밀번호", "가입일자", "생년월일", "통신사", "친밀도",
+    "근무처", "계보도", "소개한분", "주소", "메모", "코드", "카드사", "카드주인", "카드번호",
+    "유효기간", "비번", "카드생년월일", "분류", "회원단계", "연령/성별", "직업", "가족관계",
+    "니즈", "애용제품", "콘텐츠", "습관챌린지", "비즈니스시스템", "GLC프로젝트", "리더님"
+]
+
+def delete_member_field_nl_func(data: dict = None):
+    """
+    회원 필드 삭제 (자연어 기반)
+    예시:
+      - "홍길동 주소 삭제"
+      - "홍길동 휴대폰번호 메모 삭제"
+    """
+    try:
+        raw_text = ""
+        if hasattr(g, "query"):
+            if isinstance(g.query, dict):
+                raw_text = g.query.get("query", "")
+            elif isinstance(g.query, str):
+                raw_text = g.query
+        if not raw_text and data:
+            raw_text = data.get("query", "")
+
+        if not raw_text:
+            return {"status": "error", "message": "❌ 삭제할 요청문이 없습니다.", "http_status": 400}
+
+        parts = raw_text.split()
+        if len(parts) < 2:
+            return {"status": "error", "message": "❌ 회원명과 필드명이 필요합니다.", "http_status": 400}
+
+        member_name = parts[0]
+        fields = [p for p in parts[1:] if p != "삭제"]
+
+        if not fields:
+            return {"status": "error", "message": "❌ 삭제할 필드명이 없습니다.", "http_status": 400}
+
+        # DB 시트
+        sheet = get_member_sheet()
+        rows = sheet.get_all_records()
+        header = sheet.row_values(1)
+
+        # 회원 찾기 (동명이인 대비)
+        candidates = []
+        for idx, row in enumerate(rows, start=2):
+            if str(row.get("회원명", "")).strip() == member_name.strip():
+                candidates.append((idx, row))
+
+        if not candidates:
+            return {"status": "error", "message": f"❌ 회원 '{member_name}'을(를) 찾을 수 없습니다.", "http_status": 404}
+
+        choice = (data or {}).get("choice") or (g.query.get("choice") if isinstance(g.query, dict) else None)
+        if len(candidates) > 1 and not choice:
+            return {
+                "status": "need_choice",
+                "message": f"⚠️ 동일 이름 회원 '{member_name}'이(가) {len(candidates)}명 있습니다. 번호를 선택하세요.",
+                "candidates": [
+                    {"choice": i + 1, "회원명": r.get("회원명"), "회원번호": r.get("회원번호"), "휴대폰번호": r.get("휴대폰번호")}
+                    for i, (_, r) in enumerate(candidates)
+                ],
+                "http_status": 200
+            }
+
+        if len(candidates) == 1:
+            target_row = candidates[0][0]
+        else:
+            try:
+                target_row = candidates[int(choice) - 1][0]
+            except Exception:
+                return {"status": "error", "message": "❌ 올바른 choice 번호를 선택하세요.", "http_status": 400}
+
+        # 필드 삭제 처리
+        updated_fields = []
+        for f in fields:
+            if f in MEMBER_FIELDS and f in header:
+                col_idx = header.index(f) + 1
+                safe_update_cell(sheet, target_row, col_idx, "")
+                updated_fields.append(f)
+            else:
+                if re.fullmatch(r"\d{5,8}", f):
+                    if "회원번호" in header:
+                        col_idx = header.index("회원번호") + 1
+                        safe_update_cell(sheet, target_row, col_idx, "")
+                        updated_fields.append("회원번호")
+                elif re.fullmatch(r"010\d{7,8}", f) or "휴대" in f:
+                    if "휴대폰번호" in header:
+                        col_idx = header.index("휴대폰번호") + 1
+                        safe_update_cell(sheet, target_row, col_idx, "")
+                        updated_fields.append("휴대폰번호")
+
+        if not updated_fields:
+            return {"status": "error", "message": f"❌ 삭제할 필드를 찾을 수 없습니다. (입력={fields})", "http_status": 400}
+
+        return {
+            "status": "success",
+            "intent": "delete_member_field_nl_func",
+            "message": f"✅ 회원 '{member_name}'의 {', '.join(updated_fields)} 필드를 삭제했습니다.",
+            "http_status": 200
+        }
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return {"status": "error", "message": str(e), "http_status": 500}
+
 
 

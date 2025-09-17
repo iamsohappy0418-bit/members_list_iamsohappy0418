@@ -7,6 +7,7 @@ from routes.routes_member import (
     search_member_func, register_member_func, update_member_func,
     save_member_func, delete_member_func, search_by_code_logic, member_select,
     get_full_member_info, get_summary_info, get_compact_info,
+    delete_member_field_nl_func, 
 )
 from routes.routes_memo import (
     memo_save_auto_func, add_counseling_func,
@@ -18,6 +19,9 @@ from routes.routes_order import (
 from routes.routes_commission import (
     commission_find_auto_func, find_commission_func, search_commission_by_nl_func,
 )
+
+
+
 
 # ======================================================================================
 # intent_map
@@ -31,6 +35,7 @@ MEMBER_INTENTS = {
     "update_member": update_member_func,
     "save_member": save_member_func,
     "delete_member": delete_member_func,
+    "delete_member_field_nl_func": delete_member_field_nl_func,
     "search_by_code_logic": search_by_code_logic,
 
     # 추가 intent 처리
@@ -55,6 +60,8 @@ ORDER_INTENTS = {
     "order_upload": order_upload_func,
     "order_nl": order_nl_func,
     "save_order_proxy": save_order_proxy_func,
+    "order_upload": order_upload_func,
+
 }
 
 # 후원수당 관련

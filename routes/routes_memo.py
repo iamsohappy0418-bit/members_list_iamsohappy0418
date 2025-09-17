@@ -251,36 +251,33 @@ def search_memo_func():
 # ────────────────────────────────────────────────────────────────────
 # 5) 상담/개인/활동 일지 저장(JSON 전용)
 # ────────────────────────────────────────────────────────────────────
+
 def add_counseling_func():
     """
     상담일지/개인일지/활동일지 저장(JSON 전용)
-    - g.query["query"] dict 에 저장 필드가 포함되어 있다고 가정
     """
     try:
         q = g.query.get("query") if hasattr(g, "query") and isinstance(g.query, dict) else None
-        text = ""
-        if isinstance(q, dict):
-            for k in ("요청문", "text", "메모", "내용"):
-                v = q.get(k)
-                if isinstance(v, str) and v.strip():
-                    text = v.strip()
-                    break
-        if not text:
-            # 폴백: 자연어 경로
-            text = _get_text_from_g()
+        if not isinstance(q, dict):
+            return {"status": "error", "message": "❌ 저장할 요청문이 없습니다.", "http_status": 400}
 
-        if not text:
-            return {"status": "error", "message": "저장할 요청문이 없습니다.", "http_status": 400}
+        # 필드 추출
+        sheet_name = q.get("일지종류", "").strip() or "상담일지"
+        member_name = q.get("회원명", "").strip()
+        content = q.get("내용", "").strip() or q.get("text", "").strip()
 
-        res = save_memo(text)
-        ok = (res or {}).get("status") in {"ok", "success", True}
+        if not member_name or not content:
+            return {"status": "error", "message": "❌ 회원명 또는 내용이 비어 있습니다.", "http_status": 400}
+
+        # ✅ save_memo 호출 (항상 True/False 반환)
+        ok = save_memo(sheet_name, member_name, content)
+
         return {
             "status": "success" if ok else "error",
             "intent": "add_counseling",
             "http_status": 201 if ok else 400
         }
+
     except Exception as e:
         import traceback; traceback.print_exc()
         return {"status": "error", "message": str(e), "http_status": 500}
-
-
