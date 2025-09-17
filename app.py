@@ -69,6 +69,7 @@ from utils import (
     clean_member_query,
     now_kst, search_member, run_intent_func,
     call_searchMemo, openai_vision_extract_orders,
+    normalize_request_data,
 )
 
 # =================================================
@@ -332,16 +333,27 @@ def preprocess_member_query(text: str) -> str:
 # --------------------------------------------------------------------
 @app.route("/postIntent", methods=["POST"])
 def post_intent():
-    data = request.get_json(silent=True) or {}
+    raw = request.get_json(silent=True)
 
-    text = data.get("text") if isinstance(data.get("text"), str) else data.get("query")
-    if not isinstance(text, str):
-        text = ""
+    # 🔹 문자열 입력 → dict 로 변환
+    if isinstance(raw, str):
+        data = {"query": raw}
+    elif isinstance(raw, dict):
+        data = raw
+    else:
+        data = {}
+
+    # ✅ text/query 추출
+    text = data.get("text") or data.get("query") or ""
     text = text.strip()
 
     if not text:
         return jsonify({"status": "error", "message": "❌ text 또는 query 필드가 필요합니다."}), 400
 
+
+
+
+    # ✅ 전처리
     text = clean_member_query(text)
     text = preprocess_member_query(text)
 
@@ -815,19 +827,12 @@ def memo_route():
     """
     try:
         # ✅ g.query 우선, 없으면 request.get_json() 사용
-        data = getattr(g, "query", None)
-        if not data:
-            data = request.get_json(silent=True) or {}
-
-        # g.query에 반드시 저장 → search/add 함수들이 공통으로 참조
-        g.query = data
-
-        # ✅ 자연어 입력(문자열) → post_intent 우회
-        if isinstance(data, str):
-            return post_intent()
-
-        # ✅ JSON 입력 처리
+        data = normalize_request_data()
         intent = data.get("intent")
+
+        # ✅ 자연어 입력 간주 조건 → post_intent() 우회
+        if "query" in data and isinstance(data["query"], str) and not intent:
+            return post_intent()
 
         # intent가 없는 경우 JSON 구조로 자동 판별
         if not intent:

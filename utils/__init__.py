@@ -67,6 +67,8 @@ from .utils import (
     run_intent_func,
     # GPT 활용
     extract_order_from_uploaded_image, parse_order_from_text,
+
+    normalize_request_data,
 )
 
 # --------------------------------------------------
@@ -105,6 +107,8 @@ __all__ = [
     "infer_member_field", "parse_natural_query_multi",
     "run_intent_func",
     "extract_order_from_uploaded_image", "parse_order_from_text",
+
+    "normalize_request_data"
 ]
 
 

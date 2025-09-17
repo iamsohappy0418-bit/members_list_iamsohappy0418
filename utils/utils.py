@@ -12,6 +12,7 @@ import logging
 import inspect
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
+from flask import request, g
 
 # =====================================================
 # 외부 라이브러리
@@ -1193,6 +1194,32 @@ def parse_order_from_text(text: str):
     resp.raise_for_status()
     return resp.json()
 
+
+
+
+
+
+
+
+def normalize_request_data():
+    """
+    요청 데이터를 표준화:
+    - str → {"query": str}
+    - dict → 그대로
+    - 그 외 → {}
+    g.query 에 저장 후 반환
+    """
+    raw = getattr(g, "query", None) or request.get_json(silent=True)
+
+    if isinstance(raw, str):
+        data = {"query": raw}
+    elif isinstance(raw, dict):
+        data = raw
+    else:
+        data = {}
+
+    g.query = data
+    return data
 
 
 

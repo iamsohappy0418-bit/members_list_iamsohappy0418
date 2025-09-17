@@ -185,16 +185,30 @@ def guess_intent(query: str) -> str:
     if query in ["전체정보", "상세", "info"]:
         return "member_select"
 
-    # ✅ 이름만 입력 (2~4글자 한글)
+    # ✅ 이름만 입력 (2~4글자 한글) → 회원 검색
     if re.fullmatch(r"[가-힣]{2,4}", query):
         return "search_member"
 
-    # ✅ 기존 규칙 검사 ( 기반)
+    # ✅ 메모 저장 intent
+    if any(kw in query for kw in ["개인일지 저장", "상담일지 저장", "활동일지 저장", "메모 저장"]):
+        return "memo_add"
+
+    # ✅ 상담일지 추가 (특수 케이스)
+    if "상담" in query and "추가" in query:
+        return "add_counseling"
+
+    # ✅ 메모 검색 intent
+    if any(kw in query for kw in ["메모 검색", "상담일지 검색", "개인일지 검색", "활동일지 검색"]):
+        return "memo_search"
+
+    # ✅ 기존 intent 규칙 검사 (INTENT_RULES 기반)
     for keywords, intent in INTENT_RULES.items():
         if all(kw in query for kw in keywords):
             return intent
 
+    # fallback
     return "unknown"
+
 
 
 
