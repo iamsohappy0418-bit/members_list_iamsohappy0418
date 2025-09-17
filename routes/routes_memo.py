@@ -340,11 +340,12 @@ def search_memo_core(sheet_name, keywords, member_name=None,
 
         if keywords:
             if and_mode:
-                if not all((kw == member or kw in content) for kw in keywords):
+                if not all(kw in combined_text for kw in keywords):
                     continue
             else:
-                if not any((kw == member or kw in content) for kw in keywords):
+                if not any(kw in combined_text for kw in keywords):
                     continue
+
 
 
 
