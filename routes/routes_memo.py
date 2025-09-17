@@ -335,13 +335,22 @@ def search_memo_core(sheet_name, keywords, member_name=None,
         # ✅ 키워드 검색 (회원명 + 내용 전체에서 검색)
         combined_text = (member + " " + content).lower().strip()
 
+
+
+
         if keywords:
-            if and_mode:  # 모든 키워드 포함 (AND)
-                if not all(kw in combined_text for kw in keywords):
+            if and_mode:
+                if not all((kw == member or kw in content) for kw in keywords):
                     continue
-            else:  # 하나라도 포함 (OR)
-                if not any(kw in combined_text for kw in keywords):
+            else:
+                if not any((kw == member or kw in content) for kw in keywords):
                     continue
+
+
+
+
+
+
 
         results.append({
             "날짜": date_str,
