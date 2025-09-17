@@ -95,6 +95,7 @@ from routes import (
     get_full_member_info,
     get_summary_info,
     get_compact_info,
+    handle_update_member,
 
     # 메모
     memo_save_auto_func,
@@ -707,15 +708,14 @@ def member_route():
     g.query = data
     intent = data.get("intent")
 
-   
-
-    # ✅ (1) intent 직접 지정 지원
+    # ✅ (1) intent 직접 지정된 경우
     if intent and intent in MEMBER_INTENTS:
         func = MEMBER_INTENTS[intent]
 
-        # --- 인자별 호출 방식 분기 ---
-        if intent == "search_member":
-            # 회원명 기반 검색
+        if intent in ("register_member", "update_member", "save_member"):
+            result = func(data)
+
+        elif intent == "search_member":
             name = (
                 data.get("회원명")
                 or data.get("name")
@@ -725,60 +725,40 @@ def member_route():
             )
             result = func(name)
 
-        elif intent in ("register_member", "update_member", "save_member"):
-            # 등록/수정/저장은 g.query 내부에서 처리 → 인자 없음
-            result = func(data)
-
         elif intent in ("delete_member", "delete_member_field_nl_func"):
-            # 삭제도 g.query 내부에서 처리 → 인자 없음
             result = func()
 
-        elif intent == "search_by_code_logic":
-            # 코드 검색은 코드값만 추출
-            code = data.get("코드") or data.get("code") or ""
-            result = func(code)
-
         elif intent in ("member_select", "select_member"):
-            # 선택 플로우 (choice 필드 기반)
             choice = data.get("choice") or g.query.get("choice", "")
             result = func(choice)
 
-        elif intent == "summary_member":
+        elif intent == "search_by_code_logic":
+            code = data.get("코드") or data.get("code") or ""
+            result = func(code)
+
+        elif intent in ("summary_member", "compact_member"):
             result = func()
-        elif intent == "compact_member":
-            result = func()
+
         else:
-            # 인자 필요 없는 경우
             result = func()
 
         return jsonify(result), result.get("http_status", 200)
 
-    # ✅ (2) intent가 없을 때 → 자연어 기반 자동 분기
+    # ✅ (2) intent가 없을 경우 자연어 쿼리 자동 분석
     if not intent:
         if isinstance(data.get("query"), str) and not any(k in data for k in ("회원명", "회원번호")):
             query_text = data.get("query", "").strip()
 
-
-
-
-            # 자연어 자동 분기
             if query_text.endswith("등록"):
                 intent = "register_member"
             elif query_text.endswith("수정"):
                 intent = "update_member"
             elif "삭제" in query_text:
-                # 🔹 "회원명 + 삭제 + 필드명" → 필드 삭제 전용 intent
-                #    "회원명 + 삭제" 만 있는 경우 → 회원 전체 삭제
                 parts = query_text.split()
-                if len(parts) >= 3:  # 회원명 + 필드명 + 삭제
+                if len(parts) >= 3:
                     intent = "delete_member_field_nl_func"
                 else:
                     intent = "delete_member"
-
-
-
-
-            # 🔹 상세정보/종료
             elif "전체정보" in query_text or query_text in ["1", "상세", "detail", "info"]:
                 intent = "select_member"
                 g.query["choice"] = "1"
@@ -786,11 +766,10 @@ def member_route():
                 intent = "select_member"
                 g.query["choice"] = "2"
             else:
-                # 그 외는 자연어 intent 처리기로 위임
+                # 그 외 자연어 → 별도 intent 처리기로 위임
                 return post_intent()
 
-
-    # ✅ (3) intent 기반 실행 (fallback)
+    # ✅ (3) fallback: intent 추론된 상태에서 처리
     func = MEMBER_INTENTS.get(intent)
     if not func:
         result = {
@@ -799,9 +778,30 @@ def member_route():
             "http_status": 400,
         }
     else:
-        result = func()
+        if intent in ("register_member", "update_member", "save_member"):
+            result = func(data)
+        elif intent == "search_member":
+            name = (
+                data.get("회원명")
+                or data.get("name")
+                or data.get("member_name")
+                or data.get("query")
+                or ""
+            )
+            result = func(name)
+        elif intent in ("delete_member", "delete_member_field_nl_func"):
+            result = func()
+        elif intent in ("member_select", "select_member"):
+            choice = data.get("choice") or g.query.get("choice", "")
+            result = func(choice)
+        elif intent == "search_by_code_logic":
+            code = data.get("코드") or data.get("code") or ""
+            result = func(code)
+        else:
+            result = func()
 
     return jsonify(result), result.get("http_status", 200)
+
 
 
 

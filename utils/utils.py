@@ -262,10 +262,13 @@ def normalize_code_query(text: str) -> str:
 
 
 # utils/text_cleaner.py
+
 def clean_member_query(text: str) -> str:
     """
     회원 관련 요청문에서 불필요한 액션 단어 제거
-    (조회/검색/등록/수정/삭제/탈퇴/추가 등)
+    (조회/검색/등록/삭제/탈퇴/추가 등)
+    
+    ❗주의: '수정', '변경', '업데이트' 등은 intent 분석에 필요하므로 제거하지 않음
     """
     if not isinstance(text, str):
         return ""
@@ -273,9 +276,9 @@ def clean_member_query(text: str) -> str:
     original = text.strip()
     cleaned = original
 
+    # ✅ '수정', '변경', '업데이트' 등은 제거 대상에서 제외
     tokens_to_remove = [
         "회원조회", "회원 조회", "회원검색", "회원 검색", "조회", "검색",
-        "회원수정", "회원 수정", "수정",
         "회원삭제", "회원 삭제", "삭제", "탈퇴",
         "회원등록", "회원 등록", "회원추가", "회원 추가", "등록", "추가"
     ]
@@ -293,6 +296,7 @@ def clean_member_query(text: str) -> str:
         print(f"[clean_member_query] 최종 query: '{cleaned}'")
 
     return cleaned
+
 
 
 

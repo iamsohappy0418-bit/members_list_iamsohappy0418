@@ -197,7 +197,7 @@ def update_member_internal(요청문, 회원명=None, 필드=None, 값=None):
         return {"status": "error", "message": str(e), "http_status": 500}
 
 
-def delete_member_internal(name: str):
+def delete_member_internal(name, member_number):
     if not name:
         return {"error": "회원명이 필요합니다."}, 400
     sheet = get_member_sheet()
@@ -473,3 +473,18 @@ def delete_commission(회원명: str, 기준일자: str = None) -> dict:
 
 def clean_commission_data(data: dict) -> dict:
     return {k: (v.strip() if isinstance(v, str) else v) for k, v in data.items()}
+
+
+# service/member_service.py
+
+def update_member_info(name: str, field: str, value: str) -> bool:
+    """
+    시트에서 회원 정보를 업데이트하는 함수
+    """
+    print(f"[UPDATE] {name}님의 {field}를 {value}로 수정합니다.")
+    # TODO: 실제 시트 수정 로직 구현
+    return True
+
+
+print("[DEBUG] service.py loaded")
+print("globals():", list(globals().keys()))

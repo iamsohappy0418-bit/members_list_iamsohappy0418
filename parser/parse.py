@@ -192,8 +192,11 @@ def guess_intent(query: str) -> str:
     # ✅ 회원 등록/수정/삭제
     if query.endswith("등록"):
         return "register_member"
-    if query.endswith("수정"):
+    
+    # ex) "홍길동 주소 수정 대구시" 같은 구조에만 반응
+    if re.search(r"[가-힣]{2,4}\s+.*(수정|변경|업데이트)", query):
         return "update_member"
+    
     if "삭제" in query:
         parts = query.split()
         if len(parts) >= 3:   # 회원명 + 필드명 + 삭제

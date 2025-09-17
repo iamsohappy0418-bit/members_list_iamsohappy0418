@@ -11,9 +11,9 @@ from .service import (
     find_member_internal, clean_member_data,
     register_member_internal, update_member_internal,
     delete_member_internal, delete_member_field_nl_internal,
-    process_member_query,
+    process_member_query, 
+    update_member_info,  # ✅ 추가
 )
-
 # --------------------------
 # 메모 서비스
 # --------------------------
@@ -50,8 +50,8 @@ __all__ = [
     "find_member_internal", "clean_member_data",
     "register_member_internal", "update_member_internal",
     "delete_member_internal", "delete_member_field_nl_internal",
-    "process_member_query",
-
+    "process_member_query", 
+    "update_member_info",  # ✅ 추가
     # 메모
     "save_memo", "find_memo", "search_in_sheet", 
 

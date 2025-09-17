@@ -3,7 +3,7 @@ import json
 from collections import OrderedDict
 from flask import g, request, Response, jsonify, session
 
-
+from service import update_member_info
 
 # 시트/서비스/파서 의존성들
 from utils import (
@@ -1142,6 +1142,44 @@ def delete_member_field_nl_func(data: dict = None):
     except Exception as e:
         import traceback; traceback.print_exc()
         return {"status": "error", "message": str(e), "http_status": 500}
+
+
+
+
+
+
+
+
+def handle_update_member(query: str):
+    import re
+
+    m = re.match(r"([가-힣]{2,4})\s+(주소|전화번호|이메일)\s+(수정|변경|업데이트)\s+(.+)", query)
+    if not m:
+        return {
+            "status": "error",
+            "message": "수정할 내용을 파악할 수 없습니다.",
+            "http_status": 400,
+        }
+
+    name, field, _, value = m.groups()
+
+    success = update_member_info(name, field, value)
+    if not success:
+        return {
+            "status": "error",
+            "message": f"{name}님의 {field} 수정 실패",
+            "http_status": 500,
+        }
+
+    return {
+        "status": "success",
+        "message": f"{name}님의 {field}가 '{value}'로 수정되었습니다.",
+        "http_status": 200,
+    }
+
+
+
+
 
 
 

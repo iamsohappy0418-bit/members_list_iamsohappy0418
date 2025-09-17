@@ -5,13 +5,10 @@ import re
 
 # 정확히 교체할 대상 (import 구문 전체 문자열 기준)
 
-OLD = r"search_memo_func()"
-
+OLD = r"handle_update_member()"
 
 
 # NEW = r"query_multi"
-
-
 
 def fix_imports(dry_run=True):
     self_file = pathlib.Path(__file__).name  # 자기 자신 제외
