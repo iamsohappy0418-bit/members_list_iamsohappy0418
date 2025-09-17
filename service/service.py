@@ -313,31 +313,7 @@ def search_in_sheet(sheet_name, keywords, search_mode="any", start_date=None, en
     return results[:limit], has_more
 
 
-def search_memo_core(sheet_name, keywords, search_mode="any", member_name=None, start_date=None, end_date=None, limit=20):
-    results = []
-    sheet = get_worksheet(sheet_name)
-    if not sheet: return []
-    rows = sheet.get_all_records()
-    start_dt, end_dt = None, None
-    try:
-        if start_date: start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-        if end_date: end_dt = datetime.strptime(end_date, "%Y-%m-%d")
-    except Exception: pass
-    for idx, row in enumerate(rows, start=1):
-        content = clean_value_expression(clean_content(str(row.get("내용", "")), member_name)).lower()
-        member, date_str = str(row.get("회원명", "")), str(row.get("날짜", ""))
-        clean_keywords = [k.strip().lower() for k in keywords if k]
-        if member_name and member_name != "전체" and member != member_name: continue
-        if date_str:
-            try:
-                row_date = datetime.strptime(date_str.split()[0], "%Y-%m-%d")
-                if start_dt and row_date < start_dt: continue
-                if end_dt and row_date > end_dt: continue
-            except Exception: pass
-        if not any(k in content for k in clean_keywords): continue
-        results.append({"날짜": date_str, "회원명": member, "내용": content, "일지종류": sheet_name})
-        if len(results) >= limit: break
-    return results
+
 
 # =================================================
 # 주문 서비스

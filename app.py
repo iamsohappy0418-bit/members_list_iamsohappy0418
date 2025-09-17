@@ -10,7 +10,8 @@ import inspect   # ✅ 이거 추가
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
-
+from flask import request, jsonify
+from flask import g
 
 # =================================================
 # 외부 라이브러리
@@ -35,6 +36,7 @@ from config import (
 from parser import (
     guess_intent,
     preprocess_user_input,
+    
 )
 
 # =================================================
@@ -54,7 +56,7 @@ from service import (
     save_order_to_sheet,
 
     # 메모
-    save_memo, find_memo, search_in_sheet, search_memo_core,
+    save_memo, find_memo, search_in_sheet,
 
     # 후원수당
     find_commission, register_commission,
@@ -69,7 +71,9 @@ from utils import (
     clean_member_query,
     now_kst, search_member, run_intent_func,
     call_searchMemo, openai_vision_extract_orders,
-    normalize_request_data,
+    normalize_request_data, clean_memo_query,
+    clean_order_query,
+    
 )
 
 # =================================================
@@ -98,6 +102,7 @@ from routes import (
     search_memo_func,
     search_memo_from_text_func,
     memo_find_auto_func,
+   
 
     # 주문
     order_auto_func,
@@ -121,6 +126,7 @@ from routes.intent_map import (
 )
 
 
+from routes import search_memo_core
 
 
 
@@ -353,9 +359,24 @@ def post_intent():
 
 
 
-    # ✅ 전처리
-    text = clean_member_query(text)
+ 
+    # ✅ 전처리 (회원/메모/주문 구분)
+    if any(kw in text for kw in ["회원", "등록", "수정", "삭제", "탈퇴"]):
+        text = clean_member_query(text)
+    elif any(kw in text for kw in ["일지", "메모"]):
+        text = clean_memo_query(text)
+    elif any(kw in text for kw in ["주문", "제품"]):
+        text = clean_order_query(text)
+    else:
+        text = clean_member_query(text)  # 기본값
+
+
+    # 추가 전처리
     text = preprocess_member_query(text)
+
+
+
+
 
     print(f"[DEBUG] 최종 전처리 query: {text}")
 
@@ -429,60 +450,36 @@ def post_intent():
 # -------------------------------
 @app.route("/guess_intent", methods=["POST"])
 def guess_intent_entry():
-    data = request.json
+    data = request.json or {}
     user_input = data.get("query", "")
 
     if not user_input:
         return jsonify({"status": "error", "message": "❌ 입력(query)이 비어 있습니다."}), 400
 
-    # 1. 전처리: query 정규화
+    # 1. 전처리
     processed = preprocess_user_input(user_input)
     normalized_query = processed["query"]
     options = processed["options"]
 
     # 2. intent 추출
     intent = guess_intent(normalized_query)
-
-    # 🔹 "회원명 + 삭제 + 필드명" 패턴 감지 → 필드삭제 전용 intent
     if not intent or intent == "unknown":
-        if "삭제" in normalized_query:
-            parts = normalized_query.split()
-            if len(parts) >= 3:  # 회원명 + 필드명 + 삭제
-                intent = "delete_member_field_nl_func"
-            elif len(parts) >= 2:  # 회원명 + 삭제
-                intent = "delete_member"
+        return jsonify({"status": "error", "message": f"❌ intent 추출 실패 (query={normalized_query})"}), 400
 
-
-
-    # 🔹 등록/삭제/수정 키워드 보강 (추가)
-    if not intent or intent == "unknown":
-        if normalized_query.endswith("등록"):
-            intent = "register_member"
-        elif normalized_query.endswith("삭제"):
-            intent = "delete_member"
-        elif normalized_query.endswith("수정"):
-            intent = "update_member"
-
-
-    if not intent or intent == "unknown":
-        return jsonify({"status": "error", "message": f"❌ intent를 추출할 수 없습니다. (query={normalized_query})"}), 400
-
-    # 3. intent → 실행 함수 매핑
+    # 3. 실행 함수 매핑
     func = INTENT_MAP.get(intent)
     if not func:
         return jsonify({"status": "error", "message": f"❌ 처리할 수 없는 intent입니다. (intent={intent})"}), 400
 
     # 4. 실행
-    result = run_intent_func(func, normalized_query, options)  # ✅ 올바른 실행
+    result = run_intent_func(func, normalized_query, options)
 
     if isinstance(result, dict):
         return jsonify(result), result.get("http_status", 200)
     if isinstance(result, list):
         return jsonify(result), 200
+
     return jsonify({"status": "error", "message": "알 수 없는 반환 형식"}), 500
-
-
-
 
 
 
@@ -811,9 +808,6 @@ def member_route():
 # ======================================================================================
 # ✅ 일지 & 메모 (자동 분기) intent 기반 단일 라우트
 # ======================================================================================
-from flask import request, jsonify
-from flask import g
-
 # intent 매핑 (이미 선언되어 있다고 가정)
 # from routes.intent_map import MEMO_INTENTS
 # from routes.routes_memo import (post_intent, ...)
@@ -833,6 +827,10 @@ def memo_route():
         # ✅ 자연어 입력 간주 조건 → post_intent() 우회
         if "query" in data and isinstance(data["query"], str) and not intent:
             return post_intent()
+        
+
+
+
 
         # intent가 없는 경우 JSON 구조로 자동 판별
         if not intent:
@@ -852,9 +850,13 @@ def memo_route():
         else:
             # ✅ intent별로 호출 방식 분리
             if intent == "memo_add":
-                # 자연어 저장 → 문자열(text) 필요
-                text = data.get("text") if isinstance(data, dict) else data
+                # 자연어 케이스까지 커버
+                text = data.get("text") or data.get("내용") or data.get("query", "")
                 result = memo_save_auto_func(text)
+
+
+
+
             elif intent == "add_counseling":
                 # JSON 저장 → g.query 기반 처리
                 result = add_counseling_func()

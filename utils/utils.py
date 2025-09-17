@@ -13,6 +13,7 @@ import inspect
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from flask import request, g
+from utils.sheets import get_worksheet
 
 # =====================================================
 # 외부 라이브러리
@@ -295,9 +296,67 @@ def clean_member_query(text: str) -> str:
 
 
 
+def clean_memo_query(text: str, intent: str = None) -> str:
+    """
+    메모 관련 요청문에서 불필요한 액션 단어 제거
+    intent에 따라 제거 규칙 다르게 적용
+    """
+    original = text
+    if not intent:
+        if "저장" in text:
+            intent = "memo_save"
+        elif "검색" in text or "조회" in text:
+            intent = "memo_search"
+
+
+    if intent == "memo_save":
+        # 저장은 남겨둠 (삭제/조회/검색만 제거)
+        tokens_to_remove = ["삭제", "조회", "검색"]
+    elif intent == "memo_search":
+        # 검색/조회만 제거
+        tokens_to_remove = ["삭제", "조회"]
+    else:
+        # 일반적인 경우
+        tokens_to_remove = ["저장", "삭제", "조회", "검색"]
+
+    removed_tokens = []
+    for t in tokens_to_remove:
+        if t in text:
+            removed_tokens.append(t)
+            text = text.replace(t, "")
+
+    if removed_tokens:
+        print(f"[clean_memo_query] 원문: '{original}'")
+        print(f"[clean_memo_query] 제거된 토큰: {removed_tokens}")
+        print(f"[clean_memo_query] 최종 query: '{text.strip()}'")
+
+    return text.strip()
 
 
 
+
+
+
+
+
+
+def clean_order_query(text: str) -> str:
+    """
+    주문 관련 요청문에서 불필요한 액션 단어 제거
+    (저장, 등록 같은 관리용 키워드는 제거, 제품명·수량·결제방식·주소는 유지)
+    """
+    if not isinstance(text, str):
+        return ""
+    cleaned = text.strip()
+    tokens_to_remove = [
+        "주문저장", "제품주문저장", "제품주문 등록", "제품주문",
+        "주문 저장", "제품 저장",
+        "주문 등록", "제품 등록",
+        "주문", "저장", "등록"
+    ]
+    for token in tokens_to_remove:
+        cleaned = cleaned.replace(token, "").strip()
+    return cleaned
 
 
 
@@ -1220,6 +1279,7 @@ def normalize_request_data():
 
     g.query = data
     return data
+
 
 
 

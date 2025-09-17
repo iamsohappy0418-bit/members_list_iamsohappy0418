@@ -5,7 +5,9 @@ import re
 
 # 정확히 교체할 대상 (import 구문 전체 문자열 기준)
 
-OLD = r"normalize_summary"
+OLD = r"search_memo_func()"
+
+
 
 # NEW = r"query_multi"
 

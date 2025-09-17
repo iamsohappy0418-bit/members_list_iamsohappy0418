@@ -1,8 +1,9 @@
 # routes/memos.py
 import re
 from flask import g
-from parser.parse import save_memo, parse_memo, search_memo_core, find_memo
+from parser.parse import save_memo, parse_memo,  find_memo
 from utils import handle_search_memo
+from utils.sheets import get_worksheet
 
 
 
@@ -50,14 +51,16 @@ def memo_find_auto_func():
     try:
         text = _get_text_from_g()
         if "저장" in text:
-            return memo_save_auto_func()
+            return memo_save_auto_func(text)      # ✅ text 넘겨주기
         if "검색" in text:
-            return search_memo_from_text_func()
+            return search_memo_from_text_func()   # g.query에서 꺼냄
         return search_memo_func()
     except Exception as e:
         import traceback; traceback.print_exc()
         return {"status": "error", "message": str(e), "http_status": 500}
+    
 
+    
 # ────────────────────────────────────────────────────────────────────
 # 2) 자연어 메모 저장
 # ────────────────────────────────────────────────────────────────────
@@ -137,6 +140,11 @@ def search_memo_from_text_func():
         import traceback; traceback.print_exc()
         return {"status": "error", "message": str(e), "http_status": 500}
 
+
+
+
+
+
 # ────────────────────────────────────────────────────────────────────
 # 4) JSON 기반 메모 검색
 # ────────────────────────────────────────────────────────────────────
@@ -147,6 +155,7 @@ def search_memo_func():
     - JSON 입력 → 그대로 사용
     - before_request에서 이미 dict로 파싱된 경우도 처리
     - "전체메모 검색 ..." → 상담일지+개인일지+활동일지 그룹핑
+    - "동시" 키워드 → AND 검색 모드
     """
     try:
         q = getattr(g, "query", None)  # g.query 전체
@@ -209,19 +218,36 @@ def search_memo_func():
             }
 
         # ----------------------------
+        # 2-1) "동시" 키워드 → AND 모드 전환
+        # ----------------------------
+        and_mode = False
+        if "동시" in keywords:
+            and_mode = True
+            keywords = [kw for kw in keywords if kw != "동시"]
+
+        # ----------------------------
         # 3) 검색 실행
         # ----------------------------
         if sheet_name == "전체":
             results = {}
             for sn in ["상담일지", "개인일지", "활동일지"]:
-                core_results = search_memo_core(sn, keywords, member_name=member_name)
+                core_results = search_memo_core(
+                    sn,
+                    keywords,
+                    member_name=member_name,
+                    and_mode=and_mode   # ✅ 추가
+                )
                 print(f"[DEBUG] {sn} 검색 결과 {len(core_results)}건")
                 results[sn] = core_results
 
-
         else:
             results = {
-                sheet_name: search_memo_core(sheet_name, keywords, member_name=member_name)
+                sheet_name: search_memo_core(
+                    sheet_name,
+                    keywords,
+                    member_name=member_name,
+                    and_mode=and_mode   # ✅ 추가
+                )
             }
 
         # ----------------------------
@@ -241,6 +267,100 @@ def search_memo_func():
             "message": str(e),
             "http_status": 500
         }
+
+
+
+
+
+
+
+def search_memo_core(sheet_name, keywords, member_name=None,
+                     start_date=None, end_date=None, limit=20,
+                     and_mode=False):   # ✅ 추가
+    """
+    메모 검색 Core
+    - keywords: 검색 키워드 리스트
+    - member_name: 특정 회원 필터 (무조건 적용)
+    - and_mode=True → 모든 키워드 포함(AND), 기본은 OR 검색
+    """
+    ...
+
+    """
+    메모 검색 Core
+    - keywords: 검색 키워드 리스트
+    - member_name: 특정 회원 필터 (무조건 적용)
+    - and_mode=True → 모든 키워드 포함(AND), 기본은 OR 검색
+    """
+    results = []
+    sheet = get_worksheet(sheet_name)
+    if not sheet:
+        print(f"[ERROR] ❌ 시트를 가져올 수 없습니다: {sheet_name}")
+        return []
+
+    rows = sheet.get_all_records()
+
+    start_dt, end_dt = None, None
+    try:
+        if start_date:
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+        if end_date:
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+    except Exception:
+        pass
+
+    for idx, row in enumerate(rows, start=1):
+        content = str(row.get("내용", "")).strip()
+        member = str(row.get("회원명", "")).strip()
+        date_str = str(row.get("날짜", "")).strip()
+
+        # ✅ 회원명 필터 (무조건 적용)
+        if member_name and member_name != "전체" and member != member_name:
+            continue
+
+        # ✅ 날짜 필터
+        if date_str:
+            try:
+                row_date = datetime.strptime(date_str.split()[0], "%Y-%m-%d")
+                if start_dt and row_date < start_dt:
+                    continue
+                if end_dt and row_date > end_dt:
+                    continue
+            except Exception:
+                pass
+
+        # ✅ 키워드 검색 (회원명 + 내용 전체에서 검색)
+        combined_text = (member + " " + content).lower()
+
+        if keywords:
+            if and_mode:  # 모든 키워드 포함
+                if not all(kw.lower() in combined_text for kw in keywords):
+                    continue
+            else:  # 하나라도 포함
+                if not any(kw.lower() in combined_text for kw in keywords):
+                    continue
+
+
+
+        results.append({
+            "날짜": date_str,
+            "회원명": member,
+            "내용": content,
+            "일지종류": sheet_name
+        })
+
+        if len(results) >= limit:
+            break
+
+    print(f"[DEBUG] ✅ 최종 results({sheet_name}) | {len(results)}건")
+    return results
+
+
+
+
+
+
+
+
 
 
 

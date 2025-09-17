@@ -59,6 +59,7 @@ from .utils import (
     # 메모
     get_memo_results, format_memo_results,
     filter_results_by_member, handle_search_memo,
+    clean_memo_query,
     # Plugin client
     call_searchMemo, call_searchMemoFromText,
     # 회원 파서
@@ -69,6 +70,8 @@ from .utils import (
     extract_order_from_uploaded_image, parse_order_from_text,
 
     normalize_request_data,
+    clean_order_query,
+   
 )
 
 # --------------------------------------------------
@@ -109,6 +112,9 @@ __all__ = [
     "extract_order_from_uploaded_image", "parse_order_from_text",
 
     "normalize_request_data"
+    "clean_memo_query"
+    "clean_order_query"
+   
 ]
 
 

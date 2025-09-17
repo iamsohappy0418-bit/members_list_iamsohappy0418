@@ -41,6 +41,7 @@ from .routes_memo import (
     search_memo_func,
     search_memo_from_text_func,
     memo_find_auto_func,
+    search_memo_core,
 )
 
 # --------------------------
@@ -80,6 +81,7 @@ __all__ = [
     # 메모
     "memo_save_auto_func", "add_counseling_func",
     "search_memo_func", "search_memo_from_text_func", "memo_find_auto_func",
+    "search_memo_core",
 
     # 주문
     "order_auto_func", "order_upload_func",

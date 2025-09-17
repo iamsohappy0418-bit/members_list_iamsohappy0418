@@ -19,7 +19,7 @@ from .service import (
 # --------------------------
 from .service import (
     save_memo, find_memo,
-    search_in_sheet, search_memo_core,
+    search_in_sheet,
 )
 
 # --------------------------
@@ -53,7 +53,7 @@ __all__ = [
     "process_member_query",
 
     # 메모
-    "save_memo", "find_memo", "search_in_sheet", "search_memo_core",
+    "save_memo", "find_memo", "search_in_sheet", 
 
     # 주문
     "addOrders", "handle_order_save", "handle_product_order",

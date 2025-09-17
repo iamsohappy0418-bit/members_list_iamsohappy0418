@@ -324,39 +324,6 @@ def openai_vision_extract_orders(image_bytes: io.BytesIO) -> List[Dict[str, Any]
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # --------------------------------------------------
 # ✅ 시트 연결 (전역)
 # --------------------------------------------------
@@ -415,18 +382,6 @@ if os.getenv("RENDER") is None:
             load_dotenv(".env")
     except Exception:
         pass
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

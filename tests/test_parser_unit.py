@@ -20,9 +20,12 @@ from app import preprocess_member_query
     ("제품주문 저장", "order_save"),
     ("상담일지 저장", "memo_save"),
 ])
+
 def test_guess_intent(query, expected):
     intent, _ = guess_intent(query)
     assert intent == expected
+
+
 
 
 # ────────────────────────────────

@@ -48,15 +48,12 @@ API_URLS = {
     "commission": urljoin(API_BASE, "/save_commission"),
 }
 
-
 SHEET_MAP = {
     "개인": "개인일지",
     "상담": "상담일지",
     "활동": "활동일지",
 }
 
-
-
-
 DT_FORMATS = ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"]
+
 
