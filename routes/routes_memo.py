@@ -207,6 +207,15 @@ def search_memo_func():
             keywords = parsed.get("keywords", [])
             member_name = parsed.get("회원명")
 
+
+        # ----------------------------
+        # 2) keywords 정제
+        # ----------------------------
+        keywords = [kw.strip().lower() for kw in keywords if kw and kw.strip()]
+
+
+
+
         # ----------------------------
         # 2) sheet_name 검증
         # ----------------------------
@@ -276,15 +285,7 @@ def search_memo_func():
 
 def search_memo_core(sheet_name, keywords, member_name=None,
                      start_date=None, end_date=None, limit=20,
-                     and_mode=False):   # ✅ 추가
-    """
-    메모 검색 Core
-    - keywords: 검색 키워드 리스트
-    - member_name: 특정 회원 필터 (무조건 적용)
-    - and_mode=True → 모든 키워드 포함(AND), 기본은 OR 검색
-    """
-    ...
-
+                     and_mode=False):
     """
     메모 검색 Core
     - keywords: 검색 키워드 리스트
@@ -298,6 +299,9 @@ def search_memo_core(sheet_name, keywords, member_name=None,
         return []
 
     rows = sheet.get_all_records()
+
+    # ✅ keywords 정규화
+    keywords = [kw.strip().lower() for kw in keywords if kw and kw.strip()]
 
     start_dt, end_dt = None, None
     try:
@@ -313,7 +317,7 @@ def search_memo_core(sheet_name, keywords, member_name=None,
         member = str(row.get("회원명", "")).strip()
         date_str = str(row.get("날짜", "")).strip()
 
-        # ✅ 회원명 필터 (무조건 적용)
+        # ✅ 회원명 필터
         if member_name and member_name != "전체" and member != member_name:
             continue
 
@@ -329,17 +333,15 @@ def search_memo_core(sheet_name, keywords, member_name=None,
                 pass
 
         # ✅ 키워드 검색 (회원명 + 내용 전체에서 검색)
-        combined_text = (member + " " + content).lower()
+        combined_text = (member + " " + content).lower().strip()
 
         if keywords:
-            if and_mode:  # 모든 키워드 포함
-                if not all(kw.lower() in combined_text for kw in keywords):
+            if and_mode:  # 모든 키워드 포함 (AND)
+                if not all(kw in combined_text for kw in keywords):
                     continue
-            else:  # 하나라도 포함
-                if not any(kw.lower() in combined_text for kw in keywords):
+            else:  # 하나라도 포함 (OR)
+                if not any(kw in combined_text for kw in keywords):
                     continue
-
-
 
         results.append({
             "날짜": date_str,
@@ -353,6 +355,7 @@ def search_memo_core(sheet_name, keywords, member_name=None,
 
     print(f"[DEBUG] ✅ 최종 results({sheet_name}) | {len(results)}건")
     return results
+
 
 
 

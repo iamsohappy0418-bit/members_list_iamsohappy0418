@@ -1183,14 +1183,20 @@ def parse_memo(text: str) -> dict:
 
     # ✅ 전체메모 검색 (띄어쓰기 허용)
     normalized = text.replace(" ", "")
+
     if normalized.startswith("전체메모") and "검색" in text:
         keyword = text.split("검색", 1)[1].strip()
         result.update({
             "회원명": "전체",  
             "일지종류": "전체",
-            "keywords": [keyword] if keyword else []
+            # 🔽 기존: "홍길동 제품" → ["홍길동 제품"]
+            # "홍길동 제품" → ["홍길동", "제품"] 로 분리되도록 수정
+            "keywords": keyword.split() if keyword else []
         })
         return result
+
+    
+
 
     # ✅ 일반 저장/검색
     for dt in diary_types:
@@ -1199,12 +1205,16 @@ def parse_memo(text: str) -> dict:
             result["회원명"] = before.strip()
             result["일지종류"] = dt
 
+
             if "저장" in after:
                 result["내용"] = after.strip()   # ✅ '저장' 토큰 제거하지 않음
-
+         
             elif "검색" in after:
                 keyword = after.replace("검색", "").strip()
-                result["keywords"] = [keyword] if keyword else []
+                result["keywords"] = keyword.split() if keyword else []
+
+
+
             return result
 
     return result
