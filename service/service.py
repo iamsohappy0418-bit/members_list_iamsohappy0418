@@ -486,5 +486,3 @@ def update_member_info(name: str, field: str, value: str) -> bool:
     return True
 
 
-print("[DEBUG] service.py loaded")
-print("globals():", list(globals().keys()))

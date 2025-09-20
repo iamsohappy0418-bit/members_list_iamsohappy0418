@@ -352,7 +352,21 @@ def post_intent():
 
     # ✅ text/query 추출
     text = data.get("text") or data.get("query") or ""
-    text = text.strip()
+    print(f"[DEBUG] text type: {type(text)}, value: {text}") 
+
+
+    # ✅ 문자열일 때만 strip()
+    if isinstance(text, str):
+        text = text.strip()
+    else:
+        return jsonify({
+            "status": "error",
+            "message": f"❌ text/query는 문자열이어야 합니다. 현재 타입: {type(text)}",
+            "http_status": 400
+        })
+
+
+
 
     if not text:
         return jsonify({"status": "error", "message": "❌ text 또는 query 필드가 필요합니다."}), 400
@@ -360,17 +374,36 @@ def post_intent():
 
 
 
- 
-    # ✅ 전처리 (회원/메모/주문 구분)
-    if any(kw in text for kw in ["회원", "등록", "수정", "삭제", "탈퇴"]):
-        text = clean_member_query(text)
-    elif any(kw in text for kw in ["일지", "메모"]):
-        text = clean_memo_query(text)
-    elif any(kw in text for kw in ["주문", "제품"]):
-        text = clean_order_query(text)
-    else:
-        text = clean_member_query(text)  # 기본값
 
+
+
+    # ✅ intent 분석 먼저
+    initial_text = text  # 원문 백업
+    parsed = nlu_to_pc_input(text)
+    intent = parsed.get("intent")
+    g.query = parsed.get("query", {})
+    g.query["intent"] = intent
+
+    print(f"[INTENT 분석 결과] intent={intent}, query={g.query}")
+
+    # ✅ intent 기반 후처리 분기
+    if intent in ["register_member", "update_member", "delete_member"]:
+        text = clean_member_query(initial_text)
+        text = preprocess_member_query(text)
+
+    elif intent in ["save_memo", "find_memo"]:
+        text = clean_memo_query(initial_text)
+    elif intent in ["register_order", "update_order", "delete_order", "find_order"]:
+        text = clean_order_query(initial_text)
+    else:
+        text = clean_member_query(initial_text)
+        text = preprocess_member_query(text)
+
+    # 다시 분석 (전처리 후)
+    parsed = nlu_to_pc_input(text)
+    intent = parsed.get("intent")
+    g.query = parsed.get("query", {})
+    g.query["intent"] = intent
 
     # 추가 전처리
     text = preprocess_member_query(text)
@@ -379,24 +412,16 @@ def post_intent():
 
 
 
-    print(f"[DEBUG] 최종 전처리 query: {text}")
-
-    normalized_query = text
-    options = {}
-    intent = guess_intent(normalized_query)
-
-    g.query = {
-        "query": normalized_query,
-        "options": options,
-        "intent": intent,
-    }
+    # ✅ 여기에 로그 삽입!
+    print(f"[INTENT 분석 결과] intent={intent}, query={g.query}")
 
     try:
         # ✅ 전체정보/상세 요청 처리
         if intent == "member_select":
             import re
             # "강소희 전체정보", "강소희 상세" 지원
-            name_match = re.match(r"([가-힣]{2,4})(?:\s*(전체정보|상세))?", normalized_query)
+            name_match = re.match(r"([가-힣]{2,4})(?:\s*(전체정보|상세))?", text)
+
             if name_match:
                 member_name = name_match.group(1)
                 print(f"[AUTO] 세션 없이 '{member_name}' 전체정보 검색 시도")
@@ -429,7 +454,7 @@ def post_intent():
                 "message": f"❌ 처리할 수 없는 intent입니다. (intent={intent})"
             }), 400
 
-        result = run_intent_func(func, normalized_query, options)
+        result = run_intent_func(func, text, {})
         return jsonify(result), result.get("http_status", 200)
 
     except Exception as e:
@@ -442,45 +467,6 @@ def post_intent():
 
 
 
-
-
-
-
-# -------------------------------
-# guess_intent 엔드포인트
-# -------------------------------
-@app.route("/guess_intent", methods=["POST"])
-def guess_intent_entry():
-    data = request.json or {}
-    user_input = data.get("query", "")
-
-    if not user_input:
-        return jsonify({"status": "error", "message": "❌ 입력(query)이 비어 있습니다."}), 400
-
-    # 1. 전처리
-    processed = preprocess_user_input(user_input)
-    normalized_query = processed["query"]
-    options = processed["options"]
-
-    # 2. intent 추출
-    intent = guess_intent(normalized_query)
-    if not intent or intent == "unknown":
-        return jsonify({"status": "error", "message": f"❌ intent 추출 실패 (query={normalized_query})"}), 400
-
-    # 3. 실행 함수 매핑
-    func = INTENT_MAP.get(intent)
-    if not func:
-        return jsonify({"status": "error", "message": f"❌ 처리할 수 없는 intent입니다. (intent={intent})"}), 400
-
-    # 4. 실행
-    result = run_intent_func(func, normalized_query, options)
-
-    if isinstance(result, dict):
-        return jsonify(result), result.get("http_status", 200)
-    if isinstance(result, list):
-        return jsonify(result), 200
-
-    return jsonify({"status": "error", "message": "알 수 없는 반환 형식"}), 500
 
 
 
@@ -572,12 +558,14 @@ def nlu_to_pc_input(text: str) -> dict:
 
 
     # 회원 삭제
-    if any(word in text for word in ["회원삭제", "회원제거", "회원 삭제", "회원 제거"]):
-        m = re.search(r"([가-힣]{2,4}).*(삭제|제거)", text)
+    if any(word in text for word in ["회원삭제", "회원제거", "회원 삭제", "회원 제거", "삭제", "제거"]):
+        # "회원삭제 이판주", "이판주 삭제", "이판주 회원삭제", "삭제 이판주" 등 위치에 관계없이 추출
+        m = re.search(r"(?:회원)?\s*([가-힣]{2,4})\s*(?:회원)?\s*(삭제|제거)", text)
         if m:
             return {"intent": "delete_member", "query": {"회원명": m.group(1)}}
         return {"intent": "delete_member", "query": {"raw_text": text}}
-    
+
+
     # 회원 조회 / 검색 (동의어 지원)
     if any(word in text for word in ["회원조회", "회원검색", "검색회원", "조회회원", "회원 조회", "회원 검색", "검색 회원", "조회 회원"]):
     # 이름까지 붙었는지 확인
@@ -688,6 +676,45 @@ def nlu_to_pc_input(text: str) -> dict:
 
 
 
+# -------------------------------
+# guess_intent 엔드포인트
+# -------------------------------
+@app.route("/guess_intent", methods=["POST"])
+def guess_intent_entry():
+    data = request.json or {}
+    user_input = data.get("query", "")
+
+    if not user_input:
+        return jsonify({"status": "error", "message": "❌ 입력(query)이 비어 있습니다."}), 400
+
+    # 1. 전처리
+    processed = preprocess_user_input(user_input)
+    normalized_query = processed["query"]
+    options = processed["options"]
+
+    # 2. intent 추출
+    intent = guess_intent(normalized_query)
+    if not intent or intent == "unknown":
+        return jsonify({"status": "error", "message": f"❌ intent 추출 실패 (query={normalized_query})"}), 400
+
+    # 3. 실행 함수 매핑
+    func = INTENT_MAP.get(intent)
+    if not func:
+        return jsonify({"status": "error", "message": f"❌ 처리할 수 없는 intent입니다. (intent={intent})"}), 400
+
+    # 4. 실행
+    result = run_intent_func(func, normalized_query, options)
+
+    if isinstance(result, dict):
+        return jsonify(result), result.get("http_status", 200)
+    if isinstance(result, list):
+        return jsonify(result), 200
+
+    return jsonify({"status": "error", "message": "알 수 없는 반환 형식"}), 500
+
+
+
+
 
 
 
@@ -749,10 +776,15 @@ def member_route():
         if isinstance(data.get("query"), str) and not any(k in data for k in ("회원명", "회원번호")):
             query_text = data.get("query", "").strip()
 
-            if query_text.endswith("등록"):
+            # ✅ "회원등록" 포함 시 무조건 register_member
+            if "회원등록" in query_text:
                 intent = "register_member"
+            elif query_text.endswith("등록"):
+                intent = "register_member"
+
             elif query_text.endswith("수정"):
                 intent = "update_member"
+
             elif "삭제" in query_text:
                 parts = query_text.split()
                 if len(parts) >= 3:
@@ -1028,6 +1060,7 @@ def commission_route():
 
 # 잘작동
 
+# 잘 정리
 
 
 

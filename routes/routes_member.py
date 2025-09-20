@@ -787,12 +787,20 @@ def delete_member_func(data=None):
         if isinstance(query, dict) and "query" in query and isinstance(query["query"], dict):
             query = query["query"]
 
+        # 🔽 여기에 추가하세요!
+        print("[DEBUG] query:", query)
+
+
         name = (
             query.get("회원명")
             or query.get("name")
             or query.get("member_name")
             or ""
         ).strip()
+
+        # 🔽 그리고 여기에 추가하세요!
+        print("[DEBUG] name:", name)
+
         choice = str(query.get("choice", "")).strip()  # 선택번호(문자열 처리)
 
         if not name:
