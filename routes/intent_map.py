@@ -32,7 +32,7 @@ MEMBER_INTENTS = {
     "search_member": search_member_func,
     "member_select": member_select,  # 전체정보 / 종료
     "register_member": register_member_func,
-    "update_member": handle_update_member, 
+    "update_member": update_member_func, 
     "save_member": save_member_func,
     "delete_member": delete_member_func,
     "delete_member_field_nl_func": delete_member_field_nl_func,

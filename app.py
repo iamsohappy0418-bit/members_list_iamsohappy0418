@@ -219,6 +219,10 @@ def home():
     return "Flask 서버가 실행 중입니다."
 
 
+
+
+from utils.sheets import  get_sheet ,get_worksheet
+
 # ======================================================================================
 # 추가 부분
 # ======================================================================================
@@ -342,7 +346,7 @@ def preprocess_member_query(text: str) -> str:
 def post_intent():
     raw = request.get_json(silent=True)
 
-    # 🔹 문자열 입력 → dict 로 변환
+    # 🔹 문자열 입력 → dict 변환
     if isinstance(raw, str):
         data = {"query": raw}
     elif isinstance(raw, dict):
@@ -352,10 +356,8 @@ def post_intent():
 
     # ✅ text/query 추출
     text = data.get("text") or data.get("query") or ""
-    print(f"[DEBUG] text type: {type(text)}, value: {text}") 
+    print(f"[DEBUG] text type: {type(text)}, value: {text}")
 
-
-    # ✅ 문자열일 때만 strip()
     if isinstance(text, str):
         text = text.strip()
     else:
@@ -365,33 +367,32 @@ def post_intent():
             "http_status": 400
         })
 
-
-
-
     if not text:
-        return jsonify({"status": "error", "message": "❌ text 또는 query 필드가 필요합니다."}), 400
+        return jsonify({
+            "status": "error",
+            "message": "❌ text 또는 query 필드가 필요합니다."
+        }), 400
 
+    # ✅ 1단계: 규칙 기반 intent 우선 검사
+    intent = guess_intent(text)
+    g.query = {"intent": intent, "query": text}
 
+    if intent and intent != "unknown":
+        print(f"[INTENT 규칙 기반 처리] intent={intent}, query={g.query}")
+    else:
+        # ✅ 2단계: NLU fallback (규칙으로 못 잡은 경우만)
+        parsed = nlu_to_pc_input(text)
+        intent = parsed.get("intent", "unknown")
+        g.query = parsed.get("query", {}) or {}
+        g.query["intent"] = intent
+        print(f"[INTENT NLU fallback 처리] intent={intent}, query={g.query}")
 
-
-
-
-
-    # ✅ intent 분석 먼저
-    initial_text = text  # 원문 백업
-    parsed = nlu_to_pc_input(text)
-    intent = parsed.get("intent")
-    g.query = parsed.get("query", {})
-    g.query["intent"] = intent
-
-    print(f"[INTENT 분석 결과] intent={intent}, query={g.query}")
-
-    # ✅ intent 기반 후처리 분기
+    # ✅ intent 기반 전처리
+    initial_text = text
     if intent in ["register_member", "update_member", "delete_member"]:
         text = clean_member_query(initial_text)
         text = preprocess_member_query(text)
-
-    elif intent in ["save_memo", "find_memo"]:
+    elif intent in ["save_memo", "find_memo", "memo_add", "memo_search"]:
         text = clean_memo_query(initial_text)
     elif intent in ["register_order", "update_order", "delete_order", "find_order"]:
         text = clean_order_query(initial_text)
@@ -399,29 +400,23 @@ def post_intent():
         text = clean_member_query(initial_text)
         text = preprocess_member_query(text)
 
-    # 다시 분석 (전처리 후)
+    # ✅ NLU 재분석 (전처리 후 → NLU 보강)
     parsed = nlu_to_pc_input(text)
-    intent = parsed.get("intent")
-    g.query = parsed.get("query", {})
-    g.query["intent"] = intent
+    refined_intent = parsed.get("intent")
 
-    # 추가 전처리
-    text = preprocess_member_query(text)
+    # 규칙 intent가 unknown이면 → NLU 결과로 대체
+    if (not intent or intent == "unknown") and refined_intent and refined_intent != "unknown":
+        intent = refined_intent
+        g.query = parsed.get("query", {}) or {}
+        g.query["intent"] = intent
 
-
-
-
-
-    # ✅ 여기에 로그 삽입!
-    print(f"[INTENT 분석 결과] intent={intent}, query={g.query}")
+    print(f"[INTENT 최종 확정 결과] intent={intent}, query={g.query}")
 
     try:
-        # ✅ 전체정보/상세 요청 처리
+        # ✅ 특정 intent (예: member_select) 직접 처리
         if intent == "member_select":
             import re
-            # "강소희 전체정보", "강소희 상세" 지원
-            name_match = re.match(r"([가-힣]{2,4})(?:\s*(전체정보|상세))?", text)
-
+            name_match = re.match(r"([가-힣]{2,4})(?:\s*(전체정보|상세|info))?", text)
             if name_match:
                 member_name = name_match.group(1)
                 print(f"[AUTO] 세션 없이 '{member_name}' 전체정보 검색 시도")
@@ -436,9 +431,6 @@ def post_intent():
                     }), 200
                 else:
                     return jsonify(results), results.get("http_status", 400)
-
-
-
 
             return jsonify({
                 "status": "error",
@@ -455,7 +447,16 @@ def post_intent():
             }), 400
 
         result = run_intent_func(func, text, {})
-        return jsonify(result), result.get("http_status", 200)
+
+        if isinstance(result, dict):
+            return jsonify(result), result.get("http_status", 200)
+        if isinstance(result, list):
+            return jsonify(result), 200
+
+        return jsonify({
+            "status": "error",
+            "message": "알 수 없는 반환 형식"
+        }), 500
 
     except Exception as e:
         import traceback
@@ -474,24 +475,49 @@ def post_intent():
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # ======================================================================================
+# guess_intent 엔드포인트
 # ======================================================================================
+@app.route("/guess_intent", methods=["POST"])
+def guess_intent_entry():
+    data = request.json or {}
+    user_input = data.get("query", "")
+
+    if not user_input:
+        return jsonify({"status": "error", "message": "❌ 입력(query)이 비어 있습니다."}), 400
+
+    # 1. 전처리
+    processed = preprocess_user_input(user_input)
+    normalized_query = processed["query"]
+    options = processed["options"]
+
+    # 2. intent 추출
+    intent = guess_intent(normalized_query)
+    if not intent or intent == "unknown":
+        return jsonify({"status": "error", "message": f"❌ intent 추출 실패 (query={normalized_query})"}), 400
+
+    # 3. 실행 함수 매핑
+    func = INTENT_MAP.get(intent)
+    if not func:
+        return jsonify({"status": "error", "message": f"❌ 처리할 수 없는 intent입니다. (intent={intent})"}), 400
+
+    # 4. 실행
+    result = run_intent_func(func, normalized_query, options)
+
+    if isinstance(result, dict):
+        return jsonify(result), result.get("http_status", 200)
+    if isinstance(result, list):
+        return jsonify(result), 200
+
+    return jsonify({"status": "error", "message": "알 수 없는 반환 형식"}), 500
+
+
+
+
+
+from parser.parse import field_map
 # ======================================================================================
+# nlu_to_pc_input 엔드포인트
 # ======================================================================================
 def nlu_to_pc_input(text: str) -> dict:
     """
@@ -504,7 +530,6 @@ def nlu_to_pc_input(text: str) -> dict:
     # -------------------------------
     # 회원 관련
     # -------------------------------
-
     # 회원 등록
     if any(word in text for word in ["회원등록", "회원추가", "회원 등록", "회원 추가"]):
         # 앞쪽에 이름이 붙은 경우 처리: "이판주 회원등록"
@@ -518,39 +543,33 @@ def nlu_to_pc_input(text: str) -> dict:
         # 회원명 못 찾으면 raw_text만 전달
         return {"intent": "register_member", "query": {"raw_text": text}}
 
+
     # 회원 수정
     if any(word in text for word in ["수정", "회원수정", "회원변경", "회원 수정", "회원 변경"]):
-        # 케이스1: "<이름> 수정 <내용>"
-        m = re.match(r"^([가-힣]{2,4})\s*(?:회원)?\s*(?:수정|변경)\s+(.+)$", text)
+        # 케이스1: "<이름> <필드> 수정 <값>"
+        m = re.match(r"^([가-힣]{2,4})\s+(\S+)\s+(수정|변경|업데이트)\s+(.+)$", text)
         if m:
-            member_name, request_text = m.groups()
-            field = None
-            value = None
-
-            # 필드 추출 패턴
-            if "휴대폰" in request_text or "전화" in request_text:
-                field = "휴대폰번호"
-                value = re.sub(r"[^0-9\-]", "", request_text)  # 숫자/하이픈만 추출
-            elif "주소" in request_text:
-                field = "주소"
-                value = request_text.replace("주소", "").strip()
-            elif "이메일" in request_text or "메일" in request_text:
-                field = "이메일"
-                value = re.search(r"[\w\.-]+@[\w\.-]+", request_text)
-                if value:
-                    value = value.group(0)
-
-            query = {"회원명": member_name, "요청문": request_text}
-            if field and value:
-                query.update({"필드": field, "값": value})
-
-            return {"intent": "update_member", "query": query}
+            member_name, raw_field, _, new_value = m.groups()
+            normalized_field = field_map.get(raw_field, raw_field)
+            return {
+                "intent": "update_member",
+                "query": {
+                    "회원명": member_name,
+                    normalized_field: new_value.strip()
+                }
+            }
 
         # 케이스2: "회원수정 <이름> <내용>"
         m = re.match(r"^(?:회원)?\s*(?:수정|변경)\s*([가-힣]{2,4})\s+(.+)$", text)
         if m:
             member_name, request_text = m.groups()
-            return {"intent": "update_member", "query": {"회원명": member_name, "요청문": request_text}}
+            return {
+                "intent": "update_member",
+                "query": {
+                    "회원명": member_name,
+                    "요청문": request_text
+                }
+            }
 
         # fallback
         return {"intent": "update_member", "query": {"raw_text": text}}
@@ -565,13 +584,13 @@ def nlu_to_pc_input(text: str) -> dict:
             return {"intent": "delete_member", "query": {"회원명": m.group(1)}}
         return {"intent": "delete_member", "query": {"raw_text": text}}
 
-
     # 회원 조회 / 검색 (동의어 지원)
     if any(word in text for word in ["회원조회", "회원검색", "검색회원", "조회회원", "회원 조회", "회원 검색", "검색 회원", "조회 회원"]):
     # 이름까지 붙었는지 확인
         m = re.search(r"(회원\s*(검색|조회)\s*)([가-힣]{2,4})", text)
         if m:
             return {"intent": "search_member", "query": {"회원명": m.group(3)}}
+        
         return {"intent": "search_member", "query": {"raw_text": text}}
     
     # 코드 검색 (코드a, 코드 b, 코드AA...)
@@ -597,11 +616,6 @@ def nlu_to_pc_input(text: str) -> dict:
     if m:
         return {"intent": "search_member", "query": {"특수번호": m.group(1)}}
 
-    # 단순 이름
-    if re.fullmatch(r"[가-힣]{2,4}", text):
-        return {"intent": "search_member", "query": {"회원명": text}}
-
-
     # -------------------------------
     # 메모/일지 관련
     # -------------------------------
@@ -626,19 +640,45 @@ def nlu_to_pc_input(text: str) -> dict:
     # -------------------------------
     # 주문 관련
     # -------------------------------
-    if "주문" in text:
-        if "저장" in text:
-            return {"intent": "order_auto", "query": {"주문": True}}
-        m = re.search(r"([가-힣]{2,4}).*주문", text)
+    order_text = text.replace("제품주문", "주문")
+
+    if "주문" in order_text:
+        # 등록/추가/저장
+        if any(word in order_text for word in ["등록", "추가", "저장"]):
+            m = re.search(r"([가-힣]{2,4}).*(제품)?주문", order_text)
+            if m:
+                return {"intent": "register_order", "query": {"회원명": m.group(1)}}
+            return {"intent": "register_order", "query": {"raw_text": text}}
+
+        # 수정/변경/업데이트
+        if any(word in order_text for word in ["수정", "변경", "업데이트"]):
+            m = re.search(r"([가-힣]{2,4}).*(제품)?주문.*(수정|변경|업데이트)", order_text)
+            if m:
+                return {"intent": "update_order", "query": {"회원명": m.group(1)}}
+            return {"intent": "update_order", "query": {"raw_text": text}}
+
+        # 삭제/취소
+        if any(word in order_text for word in ["삭제", "취소"]):
+            m = re.search(r"([가-힣]{2,4}).*(제품)?주문.*(삭제|취소)", order_text)
+            if m:
+                return {"intent": "delete_order", "query": {"회원명": m.group(1)}}
+            return {"intent": "delete_order", "query": {"raw_text": text}}
+
+        # 단순 "홍길동 주문"
+        m = re.search(r"([가-힣]{2,4}).*(제품)?주문", order_text)
         if m:
             return {"intent": "order_auto", "query": {"주문회원": m.group(1)}}
+
+        # 그냥 "주문"
         return {"intent": "order_auto", "query": {"주문": True}}
+    
 
     # -------------------------------
     # 회원 저장 (업서트)
     # -------------------------------
-    if "회원 저장" in text or "저장" in text:
+    if "회원 저장" in text:
         return {"intent": "save_member", "query": {"raw_text": text}}
+
 
     # -------------------------------
     # 후원수당
@@ -675,42 +715,6 @@ def nlu_to_pc_input(text: str) -> dict:
 
 
 
-
-# -------------------------------
-# guess_intent 엔드포인트
-# -------------------------------
-@app.route("/guess_intent", methods=["POST"])
-def guess_intent_entry():
-    data = request.json or {}
-    user_input = data.get("query", "")
-
-    if not user_input:
-        return jsonify({"status": "error", "message": "❌ 입력(query)이 비어 있습니다."}), 400
-
-    # 1. 전처리
-    processed = preprocess_user_input(user_input)
-    normalized_query = processed["query"]
-    options = processed["options"]
-
-    # 2. intent 추출
-    intent = guess_intent(normalized_query)
-    if not intent or intent == "unknown":
-        return jsonify({"status": "error", "message": f"❌ intent 추출 실패 (query={normalized_query})"}), 400
-
-    # 3. 실행 함수 매핑
-    func = INTENT_MAP.get(intent)
-    if not func:
-        return jsonify({"status": "error", "message": f"❌ 처리할 수 없는 intent입니다. (intent={intent})"}), 400
-
-    # 4. 실행
-    result = run_intent_func(func, normalized_query, options)
-
-    if isinstance(result, dict):
-        return jsonify(result), result.get("http_status", 200)
-    if isinstance(result, list):
-        return jsonify(result), 200
-
-    return jsonify({"status": "error", "message": "알 수 없는 반환 형식"}), 500
 
 
 

@@ -27,6 +27,7 @@ from parser.parse import field_map
 
 SHEET_NAME_DB = "DB"  # 매직스트링 방지
 
+from parser.parse import field_map
 
 
 
@@ -493,7 +494,8 @@ def get_compact_info(results):
 # ======================================================================================
 # ✅ 회원 등록 (라우트)
 # ======================================================================================
-def register_member_func():
+def register_member_func(data=None):
+
     """
     회원 등록 함수 (라우트 아님)
     📌 설명:
@@ -504,15 +506,18 @@ def register_member_func():
     """
     try:
         # ✅ query 감싸진 구조와 일반 dict 모두 지원
-        if hasattr(g, "query") and isinstance(g.query, dict):
-            if "query" in g.query and isinstance(g.query["query"], dict):
-                query = g.query["query"]
-            else:
-                query = g.query
+        if data and isinstance(data, dict):
+            query = data
+        elif hasattr(g, "query") and isinstance(g.query, dict):
+            query = g.query.get("query", g.query)
         else:
             query = {}
 
-        raw_text = g.query.get("raw_text") if hasattr(g, "query") else None
+
+
+
+        raw_text = query.get("raw_text")
+
 
         name, number, phone = "", "", ""
 
@@ -563,108 +568,6 @@ def register_member_func():
 
 
 
-# ======================================================================================
-# ✅ 회원 수정
-# ======================================================================================
-def update_member_func(data: dict):
-    """
-    회원 정보 수정 함수 (확장판)
-    - 여러 필드 한꺼번에 수정 가능
-    - 회원번호/휴대폰번호/특수번호는 숫자 패턴으로 자동 인식
-    - 동일 회원 여러 명 → choice로 특정
-    """
-    try:
-        query = data.get("query", {})
-        name = query.get("회원명", "").strip()
-        choice = query.get("choice")
-
-        # 🔹 1. 업데이트 필드 추출
-        updates = {}
-        for k, v in query.items():
-            if k in ("회원명", "choice"):
-                continue
-            if not v:
-                continue
-
-            val = str(v).strip()
-
-            # 🔹 숫자 패턴 기반 필드 자동 인식
-            if re.fullmatch(r"(010-\d{3,4}-\d{4}|\d{10,11})", val):
-                updates["휴대폰번호"] = val
-            elif re.fullmatch(r"\d{5,8}", val):
-                updates["회원번호"] = val
-            elif re.fullmatch(r"\d{9,}", val):  # 예: 특수번호 긴 숫자
-                updates["특수번호"] = val
-            else:
-                updates[k] = val
-
-        if not name:
-            return {"status": "error", "message": "회원명은 필수 입력 항목입니다.", "http_status": 400}
-        if not updates:
-            return {"status": "error", "message": "수정할 필드가 없습니다.", "http_status": 400}
-
-        # 🔹 2. 대상 회원 찾기
-        sheet = get_member_sheet()
-        rows = sheet.get_all_records()
-        matches = [r for r in rows if str(r.get("회원명", "")).strip() == name]
-
-        if not matches:
-            return {"status": "error", "message": f"{name} 회원을 찾을 수 없습니다.", "http_status": 404}
-
-        if len(matches) > 1 and not choice:
-            # 후보 리스트 제공
-            candidates = []
-            for i, r in enumerate(matches, start=1):
-                candidates.append({
-                    "번호": i,
-                    "회원명": r.get("회원명"),
-                    "회원번호": r.get("회원번호"),
-                    "휴대폰번호": r.get("휴대폰번호"),
-                    "특수번호": r.get("특수번호")
-                })
-            return {
-                "status": "select_required",
-                "message": f"{name} 회원이 여러 명 발견되었습니다. choice 번호를 선택하세요.",
-                "candidates": candidates,
-                "http_status": 200
-            }
-
-        # 🔹 3. choice 반영
-        if len(matches) > 1:
-            try:
-                idx = int(choice) - 1
-                if idx < 0 or idx >= len(matches):
-                    return {"status": "error", "message": "유효하지 않은 choice 번호입니다.", "http_status": 400}
-                target = matches[idx]
-            except Exception:
-                return {"status": "error", "message": "choice 번호는 정수여야 합니다.", "http_status": 400}
-        else:
-            target = matches[0]
-
-        # 🔹 4. 실제 수정
-        row_idx = rows.index(target) + 2  # 헤더 고려
-        header = list(rows[0].keys())
-        updated_log = {}
-
-        for field, new_value in updates.items():
-            if field not in header:
-                continue
-            col_idx = header.index(field) + 1
-            old_value = sheet.cell(row_idx, col_idx).value
-            sheet.update_cell(row_idx, col_idx, "")          # 먼저 공란 처리
-            sheet.update_cell(row_idx, col_idx, new_value)   # 새 값 입력
-            updated_log[field] = {"old": old_value, "new": new_value}
-
-        return {
-            "status": "success",
-            "message": f"{name} 회원 정보가 수정되었습니다.",
-            "updated_fields": updated_log,
-            "http_status": 200
-        }
-
-    except Exception as e:
-        import traceback; traceback.print_exc()
-        return {"status": "error", "message": str(e), "http_status": 500}
 
 
 
@@ -887,16 +790,17 @@ def delete_member_func(data=None):
 
 
 
+from parser.parse import field_map
 
 
 # ======================================================================================
 # ✅ 자연어 요청 회원 삭제 라우트
 # ======================================================================================
+
 import re
 from flask import g
 from utils.sheets import get_member_sheet, safe_update_cell
 
-# DB 시트의 컬럼 헤더 (회원 필드)
 MEMBER_FIELDS = [
     "회원명", "회원번호", "휴대폰번호", "비밀번호", "가입일자", "생년월일", "통신사", "친밀도",
     "근무처", "계보도", "소개한분", "주소", "메모", "코드", "카드사", "카드주인", "카드번호",
@@ -905,13 +809,14 @@ MEMBER_FIELDS = [
 ]
 
 
-
-def format_phone(value: str) -> str:
-    """휴대폰번호 포맷: 010xxxxxxxx → 010-xxxx-xxxx"""
-    digits = re.sub(r"\D", "", value or "")
-    if re.fullmatch(r"010\d{8}", digits):
+# 전화번호 포맷 함수 (없으면 추가)
+def format_phone(v: str) -> str:
+    digits = re.sub(r"\D", "", v)
+    if len(digits) == 11:
         return f"{digits[:3]}-{digits[3:7]}-{digits[7:]}"
-    return value.strip()  # 그대로 반환 (포맷 이미 있으면 그대로)
+    elif len(digits) == 10:
+        return f"{digits[:3]}-{digits[3:6]}-{digits[6:]}"
+    return v
 
 
 def update_member_func(data: dict = None):
@@ -934,17 +839,30 @@ def update_member_func(data: dict = None):
             if "query" in data and isinstance(data["query"], dict):
                 query.update(data["query"])   # ✅ 중첩 query 병합
 
-        raw_text = query.get("query", "")
+        raw_text = query.get("raw_text")
+        if isinstance(raw_text, dict):
+            raw_text = ""
+
         member_name = query.get("회원명")
+
+        # --------------------------
+        # 🔎 디버깅 로그 추가
+        # --------------------------
+        print("DEBUG update_member_func >>> data =", data)
+        print("DEBUG update_member_func >>> query =", query)
+        print("DEBUG update_member_func >>> member_name =", member_name)
+
 
         # --------------------------
         # 2. 수정할 필드/값 추출
         # --------------------------
         updates = {}
 
-        for field in MEMBER_FIELDS:
-            if field in query:
-                updates[field] = query[field]
+        # JSON 입력 기반 (field_map 적용)
+        # JSON 입력 기반 (MEMBER_FIELDS 직접 사용)
+        for key, value in query.items():
+            if key in MEMBER_FIELDS and key != "회원명":
+                updates[key] = value.strip() if isinstance(value, str) else value
 
         # 숫자 기반 판별 (회원번호, 휴대폰번호)
         for k, v in query.items():
@@ -954,11 +872,20 @@ def update_member_func(data: dict = None):
                     if re.fullmatch(r"\d{5,8}", digits):
                         updates["회원번호"] = digits
                     elif re.fullmatch(r"010\d{8}", digits):
-                        updates["휴대폰번호"] = format_phone(v)  # ✅ 포맷 적용 저장
+                        updates["휴대폰번호"] = format_phone(v)
 
+        # 자연어 기반 파싱
+        if isinstance(raw_text, str) and raw_text:
+            m = re.match(r"([가-힣]{2,4})\s+(\S+)\s+(수정|변경|업데이트)\s+(.+)", raw_text)
+            if m:
+                member_name, raw_field, _, new_value = m.groups()
 
+                if raw_field in field_map:
+                    normalized_field = field_map[raw_field]
+                    updates[normalized_field] = new_value.strip()
 
-
+                
+                updates[normalized_field] = new_value.strip()
 
         if not member_name:
             return {"status": "error", "message": "❌ 회원명이 필요합니다.", "http_status": 400}
@@ -1039,9 +966,9 @@ def update_member_func(data: dict = None):
 
 
 
-
-
-
+# ======================================================================================
+# ✅ 자연어 요청 회원 삭제 라우트
+# ======================================================================================
 # routes/routes_member.py
 import re
 from flask import g
@@ -1161,12 +1088,16 @@ def delete_member_field_nl_func(data: dict = None):
 def handle_update_member(query: str):
     import re
 
+    # dict가 들어오면 문자열 추출
+    if isinstance(query, dict):
+        query = query.get("요청문") or query.get("raw_text") or ""
+
     m = re.match(r"([가-힣]{2,4})\s+(주소|전화번호|이메일)\s+(수정|변경|업데이트)\s+(.+)", query)
     if not m:
         return {
             "status": "error",
             "message": "수정할 내용을 파악할 수 없습니다.",
-            "http_status": 400,
+            "http_status": 400
         }
 
     name, field, _, value = m.groups()

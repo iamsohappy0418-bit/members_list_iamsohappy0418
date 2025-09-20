@@ -189,21 +189,25 @@ def guess_intent(query: str) -> str:
     if re.fullmatch(r"[가-힣]{2,4}", query):
         return "search_member"
 
-    # ✅ 회원 등록/수정/삭제
-    if query.endswith("등록"):
+    if query.endswith("회원등록") or query.endswith("회원 등록"):
         return "register_member"
+
     
     # ex) "홍길동 주소 수정 대구시" 같은 구조에만 반응
-    if re.search(r"[가-힣]{2,4}\s+.*(수정|변경|업데이트)", query):
+    if re.search(r"[가-힣]{2,4}\s+.*(수정|변경|업데이트)", query) and "회원" in query:
         return "update_member"
+
     
-    if "삭제" in query:
+    if "삭제" in query and ("회원" in query or re.match(r"^[가-힣]{2,4}\s+삭제", query)):
         parts = query.split()
-        if len(parts) >= 3:   # 회원명 + 필드명 + 삭제
+        if len(parts) >= 3:
             return "delete_member_field_nl_func"
-        elif len(parts) >= 2: # 회원명 + 삭제
+        elif len(parts) >= 2:
             return "delete_member"
         return "delete_member"
+
+    
+
 
     # ✅ 메모 저장 intent
     if any(kw in query for kw in ["개인일지 저장", "상담일지 저장", "활동일지 저장", "메모 저장"]):
