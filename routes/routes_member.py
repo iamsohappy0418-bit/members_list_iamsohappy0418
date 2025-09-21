@@ -369,10 +369,25 @@ def member_select_direct(results):
 
 
 # ===================**************
-def member_select():
+def member_select(choice=None):
     data = request.json or {}
     choice = str(data.get("choice", "")).strip()
+    member_name = str(data.get("회원명", "")).strip()
 
+    # 🔹 자연어 "홍길동 전체정보" 같은 경우 → 회원명 직접 처리
+    if member_name:
+        results = find_member_logic(member_name)
+        if results.get("status") == "success":
+            return {
+                "status": "success",
+                "message": "회원 전체정보입니다.",
+                "results": results["results"],
+                "http_status": 200
+            }
+        else:
+            return results
+
+    # 🔹 choice 기반 처리 (번호 선택 전용)
     if choice in ["종료", "끝", "exit", "quit"]:
         choice = "2"
     elif choice in ["전체정보", "전체", "1", "상세", "detail", "info"]:

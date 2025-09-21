@@ -338,6 +338,16 @@ def preprocess_member_query(text: str) -> str:
     return text
 
 
+def ensure_query_dict(query) -> dict:
+    """
+    query가 문자열이면 {"raw_text": query}로 감싸고,
+    None이면 {} 반환. dict면 그대로 반환.
+    """
+    if isinstance(query, str):
+        return {"raw_text": query}
+    if isinstance(query, dict):
+        return query
+    return {}
 
 # --------------------------------------------------------------------
 # postIntent (자연어 입력 전용 공식 진입점)
@@ -346,7 +356,6 @@ def preprocess_member_query(text: str) -> str:
 def post_intent():
     raw = request.get_json(silent=True)
 
-    # 🔹 문자열 입력 → dict 변환
     if isinstance(raw, str):
         data = {"query": raw}
     elif isinstance(raw, dict):
@@ -354,7 +363,6 @@ def post_intent():
     else:
         data = {}
 
-    # ✅ text/query 추출
     text = data.get("text") or data.get("query") or ""
     print(f"[DEBUG] text type: {type(text)}, value: {text}")
 
@@ -363,7 +371,7 @@ def post_intent():
     else:
         return jsonify({
             "status": "error",
-            "message": f"❌ text/query는 문자열이어야 합니다. 현재 타입: {type(text)}",
+            "message": f"❌ text/query는 문자열이어야 합니다.",
             "http_status": 400
         })
 
@@ -373,18 +381,19 @@ def post_intent():
             "message": "❌ text 또는 query 필드가 필요합니다."
         }), 400
 
-    # ✅ 1단계: 규칙 기반 intent 우선 검사
+    # ✅ 1단계: 규칙 기반 intent
     intent = guess_intent(text)
-    g.query = {"intent": intent, "query": text}
-
     if intent and intent != "unknown":
+        parsed = nlu_to_pc_input(text)
+        g.intent = intent
+        g.query = parsed.get("query", {}) or {}
         print(f"[INTENT 규칙 기반 처리] intent={intent}, query={g.query}")
     else:
-        # ✅ 2단계: NLU fallback (규칙으로 못 잡은 경우만)
+        # ✅ 2단계: NLU fallback
         parsed = nlu_to_pc_input(text)
         intent = parsed.get("intent", "unknown")
+        g.intent = intent
         g.query = parsed.get("query", {}) or {}
-        g.query["intent"] = intent
         print(f"[INTENT NLU fallback 처리] intent={intent}, query={g.query}")
 
     # ✅ intent 기반 전처리
@@ -403,17 +412,14 @@ def post_intent():
     # ✅ NLU 재분석 (전처리 후 → NLU 보강)
     parsed = nlu_to_pc_input(text)
     refined_intent = parsed.get("intent")
-
-    # 규칙 intent가 unknown이면 → NLU 결과로 대체
     if (not intent or intent == "unknown") and refined_intent and refined_intent != "unknown":
         intent = refined_intent
+        g.intent = intent
         g.query = parsed.get("query", {}) or {}
-        g.query["intent"] = intent
-
     print(f"[INTENT 최종 확정 결과] intent={intent}, query={g.query}")
 
     try:
-        # ✅ 특정 intent (예: member_select) 직접 처리
+        # ✅ 특정 intent 직접 처리
         if intent == "member_select":
             import re
             name_match = re.match(r"([가-힣]{2,4})(?:\s*(전체정보|상세|info))?", text)
@@ -473,8 +479,6 @@ def post_intent():
 
 
 
-
-
 # ======================================================================================
 # guess_intent 엔드포인트
 # ======================================================================================
@@ -515,6 +519,10 @@ def guess_intent_entry():
 
 
 
+
+
+
+
 from parser.parse import field_map
 # ======================================================================================
 # nlu_to_pc_input 엔드포인트
@@ -527,21 +535,42 @@ def nlu_to_pc_input(text: str) -> dict:
     """
     text = (text or "").strip()
 
+
+
+
     # -------------------------------
     # 회원 관련
     # -------------------------------
     # 회원 등록
     if any(word in text for word in ["회원등록", "회원추가", "회원 등록", "회원 추가"]):
-        # 앞쪽에 이름이 붙은 경우 처리: "이판주 회원등록"
+        # ✅ 케이스3: "<이름> 회원 등록 ..." → 이름 + 나머지
+        print("[DEBUG] 회원등록 케이스3 매치 시도:", text)
+        m = re.match(r"([가-힣]{2,4})\s+회원\s*(등록|추가)\s*(.*)", text)
+        if m:
+            print("[DEBUG] 회원등록 케이스3 성공:", m.groups())
+            member_name, _, extra = m.groups()
+            return {
+                "intent": "register_member",
+                "query": {
+                    "회원명": member_name.strip(),
+                    "raw_text": extra.strip()
+                }
+            }
+
+        # 케이스1: "<이름> 회원등록"
         m = re.search(r"([가-힣]{2,4})\s*(회원등록|회원추가|회원 등록|회원 추가)", text)
         if m:
             return {"intent": "register_member", "query": {"회원명": m.group(1)}}
-        # 뒷쪽에 이름이 오는 경우 처리: "회원등록 이판주"
+
+        # 케이스2: "회원등록 <이름>"
         m = re.search(r"(회원등록|회원추가|회원 등록|회원 추가)\s*([가-힣]{2,4})", text)
         if m:
             return {"intent": "register_member", "query": {"회원명": m.group(2)}}
-        # 회원명 못 찾으면 raw_text만 전달
+
+        # fallback
         return {"intent": "register_member", "query": {"raw_text": text}}
+
+
 
 
     # 회원 수정
