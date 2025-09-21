@@ -4,6 +4,7 @@ from flask import g
 from parser.parse import save_memo, parse_memo,  find_memo
 from utils import handle_search_memo
 from utils.sheets import get_worksheet
+from datetime import datetime
 
 
 
@@ -169,52 +170,43 @@ def search_memo_func():
         # 1) JSON / 자연어 / dict 분기
         # ----------------------------
         if isinstance(q, dict):
-            if isinstance(q.get("query"), str):
-                # ✅ 자연어 입력
-                parsed = parse_memo(q.get("query"))
-                print("[DEBUG] parse_memo output:", parsed)
+            query_data = q.get("query", q)
+            sheet_name = query_data.get("일지종류", "").strip()
+            member_name = query_data.get("회원명", "").strip()
 
-                sheet_name = parsed.get("일지종류")
-                keywords = parsed.get("keywords", [])
-                member_name = parsed.get("회원명")
-
-            elif isinstance(q.get("query"), dict):
-                # ✅ 이미 before_request에서 파싱된 dict
-                inner_q = q.get("query", {})
-                sheet_name = inner_q.get("일지종류", "").strip()
-                member_name = inner_q.get("회원명")
-
-                # keywords vs 검색어 보정
-                if "keywords" in inner_q:
-                    keywords = inner_q.get("keywords", [])
-                elif "검색어" in inner_q:
-                    keywords = [inner_q.get("검색어")] if inner_q.get("검색어") else []
+            # ✅ keywords vs 검색어 보정
+            if "keywords" in query_data:
+                keywords = query_data.get("keywords", [])
+            elif "검색어" in query_data:
+                검색어 = query_data.get("검색어")
+                if isinstance(검색어, str):
+                    keywords = 검색어.strip().split()
+                elif isinstance(검색어, list):
+                    keywords = 검색어
                 else:
                     keywords = []
-
             else:
-                # ✅ JSON API 입력 (직접 구조화 dict)
-                sheet_name = q.get("일지종류", "").strip()
-                member_name = q.get("회원명")
-                keywords = q.get("keywords", [])
+                keywords = []
 
         else:
-            # ✅ g.query 자체가 문자열
+            # ✅ g.query가 문자열인 경우 (자연어 직접 입력)
             parsed = parse_memo(q) if q else {}
             print("[DEBUG] parse_memo output:", parsed)
 
-            sheet_name = parsed.get("일지종류")
-            keywords = parsed.get("keywords", [])
-            member_name = parsed.get("회원명")
+            sheet_name = parsed.get("일지종류", "").strip()
+            member_name = parsed.get("회원명", "").strip()
 
+            if "keywords" in parsed:
+                keywords = parsed["keywords"]
+            elif "검색어" in parsed:
+                keywords = parsed["검색어"].strip().split()
+            else:
+                keywords = []
 
         # ----------------------------
         # 2) keywords 정제
         # ----------------------------
         keywords = [kw.strip().lower() for kw in keywords if kw and kw.strip()]
-
-
-
 
         # ----------------------------
         # 2) sheet_name 검증
@@ -244,7 +236,7 @@ def search_memo_func():
                     sn,
                     keywords,
                     member_name=member_name,
-                    and_mode=and_mode   # ✅ 추가
+                    and_mode=and_mode
                 )
                 print(f"[DEBUG] {sn} 검색 결과 {len(core_results)}건")
                 results[sn] = core_results
@@ -255,7 +247,7 @@ def search_memo_func():
                     sheet_name,
                     keywords,
                     member_name=member_name,
-                    and_mode=and_mode   # ✅ 추가
+                    and_mode=and_mode
                 )
             }
 
@@ -276,7 +268,6 @@ def search_memo_func():
             "message": str(e),
             "http_status": 500
         }
-
 
 
 
@@ -338,17 +329,17 @@ def search_memo_core(sheet_name, keywords, member_name=None,
 
 
 
+        # ✅ 키워드 검색 (내용 전체에서 모든 키워드 포함 여부 체크)
+        # ✅ 키워드 검색 (내용 필드에서만 AND로 검사)
+        # ✅ 키워드 검색: 내용(content)에서만 검사
         if keywords:
+            content_lower = content.lower()
             if and_mode:
-                if not all((kw == member or kw in content) for kw in keywords):
+                if not all(kw in content_lower for kw in keywords):
                     continue
             else:
-                if not any((kw == member or kw in content) for kw in keywords):
+                if not any(kw in content_lower for kw in keywords):
                     continue
-
-
-
-
 
 
 
@@ -390,7 +381,7 @@ def add_counseling_func():
     상담일지/개인일지/활동일지 저장(JSON 전용)
     """
     try:
-        q = g.query.get("query") if hasattr(g, "query") and isinstance(g.query, dict) else None
+        q = g.query if hasattr(g, "query") and isinstance(g.query, dict) else None
         if not isinstance(q, dict):
             return {"status": "error", "message": "❌ 저장할 요청문이 없습니다.", "http_status": 400}
 

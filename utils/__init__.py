@@ -71,6 +71,7 @@ from .utils import (
 
     normalize_request_data,
     clean_order_query,
+    fallback_natural_search,
    
 )
 
@@ -114,6 +115,7 @@ __all__ = [
     "normalize_request_data"
     "clean_memo_query"
     "clean_order_query"
+    "fallback_natural_search"
    
 ]
 

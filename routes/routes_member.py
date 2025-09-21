@@ -536,16 +536,23 @@ def register_member_func(data=None):
 
         name, number, phone = "", "", ""
 
+
+
+
         # 1) 자연어 입력 기반 파싱
-        if raw_text and "회원등록" in raw_text:
+        if raw_text:
             parts = raw_text.split()
             for part in parts:
-                if re.fullmatch(r"[가-힣]{2,4}", part):  # 이름
-                    name = part
+                if re.fullmatch(r"[가-힣]{2,10}", part):  # 이름
+                    name = name or part
                 elif re.fullmatch(r"\d{5,8}", part):   # 회원번호
-                    number = part
-                elif re.fullmatch(r"(010-\d{3,4}-\d{4}|\d{10,11})", part):  # 휴대폰
-                    phone = part
+                    number = number or part
+                elif re.fullmatch(r"(010-\d{3,4}-\d{4}|010\d{7,8})", part):  # 휴대폰
+                    phone = phone or part
+
+
+
+
 
         # 2) JSON 입력 방식
         if isinstance(query, dict):
@@ -704,6 +711,13 @@ def delete_member_func(data=None):
         # query 중첩 처리
         if isinstance(query, dict) and "query" in query and isinstance(query["query"], dict):
             query = query["query"]
+
+        # 🔽 여기에 추가하세요!
+        if isinstance(query, str):
+            from utils import fallback_natural_search
+            query = fallback_natural_search(query)
+
+
 
         # 🔽 여기에 추가하세요!
         print("[DEBUG] query:", query)

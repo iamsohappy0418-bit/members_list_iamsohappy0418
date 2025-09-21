@@ -47,6 +47,7 @@ def simulate_delay(seconds: int = 1):
     print("작업 완료")
 
 
+
 # ======================================================================================
 # ✅ 날짜/시간 유틸
 # ======================================================================================
@@ -466,6 +467,10 @@ def normalize_query(query: str) -> str:
 # =====================================================================
 def fallback_natural_search(query: str) -> Dict[str, str]:
     query = query.strip()
+
+    # 삭제, 등록 등 앞 단어 제거
+    # 예: "회원삭제 이판사" → "이판사"
+    query = re.sub(r"^(회원)?(삭제|제거|등록|추가|조회|검색)\s*", "", query)
 
     if re.fullmatch(r"\d{3}-\d{3,4}-\d{4}", query):
         return {"휴대폰번호": query}
@@ -921,12 +926,29 @@ if not logger.handlers:  # 중복 등록 방지
 def handle_search_memo(data: dict):
     """
     searchMemo와 searchMemoFromText 자동 분기 처리 + 로깅 (동기 버전)
+    - 자연어 입력 → call_searchMemoFromText 후 keywords 등 JSON 구조로 맞춤
+    - keywords 없는 경우 → 자연어로 변환 후 동일 처리
+    - keywords 있는 경우 → searchMemo 직접 호출
     """
     # 1) 자연어 요청 (text 필드가 있는 경우)
     if "text" in data:
         query = data["text"].strip()
         logger.info(f"[FromText-Direct] text 필드 감지 → searchMemoFromText 실행 | query='{query}'")
-        return call_searchMemoFromText({"text": query})
+
+        res = call_searchMemoFromText({"text": query})
+
+        # ✅ keywords 보정
+        if isinstance(res, dict):
+            if "검색어" in res and isinstance(res["검색어"], str):
+                res["keywords"] = res["검색어"].strip().split()
+            elif "keywords" not in res:
+                res["keywords"] = []
+
+            # ✅ 일지종류 & 회원명 보정
+            res["일지종류"] = res.get("일지종류", "전체")
+            res["회원명"] = res.get("회원명", "전체")
+
+        return res
 
     # 2) keywords가 없는 경우 → 자연어 변환
     if not data.get("keywords"):
@@ -938,14 +960,25 @@ def handle_search_memo(data: dict):
 
         query = f"{mode}일지 검색 {search_mode_text} {date_text}".strip()
         logger.info(f"[FromText-Converted] keywords 없음 → query 변환 후 searchMemoFromText 실행 | query='{query}'")
-        return call_searchMemoFromText({"text": query})
+
+        res = call_searchMemoFromText({"text": query})
+
+        # ✅ keywords 보정
+        if isinstance(res, dict):
+            if "검색어" in res and isinstance(res["검색어"], str):
+                res["keywords"] = res["검색어"].strip().split()
+            elif "keywords" not in res:
+                res["keywords"] = []
+
+            # ✅ 일지종류 & 회원명 보정
+            res["일지종류"] = res.get("일지종류", "전체")
+            res["회원명"] = res.get("회원명", "전체")
+
+        return res
 
     # 3) 정상 content 기반 요청 → searchMemo 실행
     logger.info(f"[Content-Mode] keywords 감지 → searchMemo 실행 | keywords={data.get('keywords')}, mode={data.get('mode')}")
     return call_searchMemo(data)
-
-
-
 
 
 

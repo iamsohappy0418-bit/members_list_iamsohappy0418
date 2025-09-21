@@ -73,7 +73,7 @@ from utils import (
     call_searchMemo, openai_vision_extract_orders,
     normalize_request_data, clean_memo_query,
     clean_order_query,
-    
+    fallback_natural_search
 )
 
 # =================================================
@@ -418,6 +418,20 @@ def post_intent():
         g.query = parsed.get("query", {}) or {}
     print(f"[INTENT 최종 확정 결과] intent={intent}, query={g.query}")
 
+    # ✅ keywords 보정 (검색어 → keywords로 변환)
+    if intent == "memo_search":
+        if isinstance(g.query, dict):
+            if "검색어" in g.query and isinstance(g.query["검색어"], str):
+                g.query["keywords"] = g.query["검색어"].strip().split()
+                del g.query["검색어"]
+            elif "keywords" not in g.query:
+                g.query["keywords"] = []
+
+
+
+
+
+
     try:
         # ✅ 특정 intent 직접 처리
         if intent == "member_select":
@@ -545,7 +559,9 @@ def nlu_to_pc_input(text: str) -> dict:
     if any(word in text for word in ["회원등록", "회원추가", "회원 등록", "회원 추가"]):
         # ✅ 케이스3: "<이름> 회원 등록 ..." → 이름 + 나머지
         print("[DEBUG] 회원등록 케이스3 매치 시도:", text)
-        m = re.match(r"([가-힣]{2,4})\s+회원\s*(등록|추가)\s*(.*)", text)
+        # 더 안전한 대안 (이름에서 '회원'이 분리된 경우만 추출)
+        m = re.match(r"(?<!\S)([가-힣]{2,10})\s+회원\s*(등록|추가)\s*(.*)", text)
+
         if m:
             print("[DEBUG] 회원등록 케이스3 성공:", m.groups())
             member_name, _, extra = m.groups()
@@ -558,14 +574,30 @@ def nlu_to_pc_input(text: str) -> dict:
             }
 
         # 케이스1: "<이름> 회원등록"
-        m = re.search(r"([가-힣]{2,4})\s*(회원등록|회원추가|회원 등록|회원 추가)", text)
+        m = re.search(r"([가-힣]{2,10})\s*(회원등록|회원추가|회원 등록|회원 추가)", text)
         if m:
-            return {"intent": "register_member", "query": {"회원명": m.group(1)}}
+            return {
+                "intent": "register_member",
+                "query": {
+                    "회원명": m.group(1),
+                    "raw_text": text   # ✅ 꼭 포함해야 함!
+                }
+            }
+
+
 
         # 케이스2: "회원등록 <이름>"
-        m = re.search(r"(회원등록|회원추가|회원 등록|회원 추가)\s*([가-힣]{2,4})", text)
+        m = re.search(r"(회원등록|회원추가|회원 등록|회원 추가)\s*([가-힣]{2,10})", text)
         if m:
-            return {"intent": "register_member", "query": {"회원명": m.group(2)}}
+            return {
+                "intent": "register_member",
+                "query": {
+                    "회원명": m.group(2),
+                    "raw_text": text   # ✅ 꼭 포함해야 함!
+                }
+            }
+
+
 
         # fallback
         return {"intent": "register_member", "query": {"raw_text": text}}
@@ -718,6 +750,18 @@ def nlu_to_pc_input(text: str) -> dict:
     # -------------------------------
     # 기본 반환
     # -------------------------------
+    parts = text.split()
+    result = {}
+    for part in parts:
+        parsed = fallback_natural_search(part)
+        result.update(parsed)
+
+    if result.get("회원명") and (result.get("회원번호") or result.get("휴대폰번호")):
+        return {
+            "intent": "register_member",
+            "query": result
+        }
+
     return {"intent": "unknown", "query": {"raw_text": text}}
 
 
@@ -913,12 +957,18 @@ def memo_route():
                 "http_status": 400
             }
         else:
+
+
+
             # ✅ intent별로 호출 방식 분리
             if intent == "memo_add":
-                # 자연어 케이스까지 커버
-                text = data.get("text") or data.get("내용") or data.get("query", "")
-                result = memo_save_auto_func(text)
-
+                if isinstance(data.get("query"), dict):
+                    g.query = data["query"]  # ✅ query dict만 추출해서 g.query로
+                    result = add_counseling_func()
+                else:
+                    # 자연어 케이스는 기존 방식
+                    text = data.get("text") or data.get("내용") or data.get("query", "")
+                    result = memo_save_auto_func(text)
 
 
 
