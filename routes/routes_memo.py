@@ -120,27 +120,19 @@ def memo_save_auto_func(text: str):
 # ────────────────────────────────────────────────────────────────────
 def search_memo_from_text_func():
     """
-    자연어 기반 메모 검색
+    자연어 기반 메모 검색 → JSON 기반과 동일한 흐름으로 검색
     """
     try:
         text = _get_text_from_g()
         if not text:
             return {"status": "error", "message": "검색 문장이 없습니다.", "http_status": 400}
 
-        results = handle_search_memo(text) if callable(handle_search_memo) \
-                  else search_memo_core({"text": text})
+        g.query = text  # 자연어 → g.query에 설정
+        return search_memo_func()  # JSON 기반 검색 함수 호출
 
-        return {
-            "status": "success",
-            "intent": "search_memo_from_text",
-            "count": len(results or []),
-            "results": results or [],
-            "http_status": 200
-        }
     except Exception as e:
         import traceback; traceback.print_exc()
         return {"status": "error", "message": str(e), "http_status": 500}
-
 
 
 
@@ -276,11 +268,11 @@ def search_memo_func():
 
 def search_memo_core(sheet_name, keywords, member_name=None,
                      start_date=None, end_date=None, limit=20,
-                     and_mode=False):
+                     and_mode=False, full_phrase=""):
     """
     메모 검색 Core
     - keywords: 검색 키워드 리스트
-    - member_name: 특정 회원 필터 (무조건 적용)
+    - full_phrase: 키워드 전체 문장 기반 정확 검색
     - and_mode=True → 모든 키워드 포함(AND), 기본은 OR 검색
     """
     results = []
@@ -293,6 +285,7 @@ def search_memo_core(sheet_name, keywords, member_name=None,
 
     # ✅ keywords 정규화
     keywords = [kw.strip().lower() for kw in keywords if kw and kw.strip()]
+    full_phrase = full_phrase.strip().lower()
 
     start_dt, end_dt = None, None
     try:
@@ -323,26 +316,20 @@ def search_memo_core(sheet_name, keywords, member_name=None,
             except Exception:
                 pass
 
-        # ✅ 키워드 검색 (회원명 + 내용 전체에서 검색)
-        combined_text = (member + " " + content).lower().strip()
+        content_lower = content.lower()
 
+        # ✅ 정확한 문장 일치 우선 검사
+        if full_phrase and full_phrase not in content_lower:
+            continue
 
-
-
-        # ✅ 키워드 검색 (내용 전체에서 모든 키워드 포함 여부 체크)
-        # ✅ 키워드 검색 (내용 필드에서만 AND로 검사)
-        # ✅ 키워드 검색: 내용(content)에서만 검사
+        # ✅ 키워드 검사 (AND/OR)
         if keywords:
-            content_lower = content.lower()
             if and_mode:
                 if not all(kw in content_lower for kw in keywords):
                     continue
             else:
                 if not any(kw in content_lower for kw in keywords):
                     continue
-
-
-
 
         results.append({
             "날짜": date_str,
@@ -356,8 +343,6 @@ def search_memo_core(sheet_name, keywords, member_name=None,
 
     print(f"[DEBUG] ✅ 최종 results({sheet_name}) | {len(results)}건")
     return results
-
-
 
 
 
