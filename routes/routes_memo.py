@@ -243,9 +243,26 @@ def search_memo_func():
                 )
             }
 
+
+
+
+
+
         # ----------------------------
         # 4) 반환
         # ----------------------------
+
+        # 🔽 여기에 출력 코드 삽입
+        results_data = results
+        for category, memos in results_data.items():
+            print(f"### {category}")
+            for memo in memos:
+                print(f"- 날짜: {memo.get('날짜')}")
+                print(f"- 회원명: {memo.get('회원명')}")
+                print(f"- 일지종류: {memo.get('일지종류')}")
+                print(f"- 내용: {memo.get('내용')}\n")
+
+
         return {
             "status": "success",
             "intent": "search_memo",

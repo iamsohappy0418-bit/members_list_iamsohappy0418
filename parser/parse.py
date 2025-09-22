@@ -109,7 +109,7 @@ field_map = {
 
 INTENT_RULES = {
     # 회원 관련
-    ("회원", "검색"): "search_member",
+    ("회원", "검색"): "",
     ("회원", "조회"): "search_member",   # ✅ 조회도 검색과 동일 처리
     ("회원", "등록"): "register_member",
     ("회원", "추가"): "register_member",

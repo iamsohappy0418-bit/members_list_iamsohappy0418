@@ -73,7 +73,8 @@ from utils import (
     call_searchMemo, openai_vision_extract_orders,
     normalize_request_data, clean_memo_query,
     clean_order_query,
-    fallback_natural_search
+    fallback_natural_search,
+    format_memo_results
 )
 
 # =================================================
@@ -975,16 +976,24 @@ def memo_route():
             elif intent == "add_counseling":
                 # JSON 저장 → g.query 기반 처리
                 result = add_counseling_func()
-            else:
-                # 검색 계열 등은 g.query 기반 처리
+
+
+
+            elif intent in ("memo_search", "search_memo"):
                 result = func()
+                if isinstance(result, list):
+                    result = format_memo_results(result)
+            else:
+                result = func()
+
 
         # ✅ 반환 형식 처리
         if isinstance(result, dict):
             return jsonify(result), result.get("http_status", 200)
 
         if isinstance(result, list):
-            return jsonify(result), 200
+            return jsonify(format_memo_results(result)), 200
+
 
         return jsonify({"status": "error", "message": "알 수 없는 반환 형식"}), 500
 
@@ -1137,15 +1146,7 @@ def commission_route():
 
 
 
-
-# 정상
-
-
-# 잘작동
-
-# 잘 정리
-
-
+# 잘 정리 했음
 
 
 
