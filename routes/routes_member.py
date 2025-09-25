@@ -875,7 +875,7 @@ def update_member_func(data: dict = None):
             if "query" in data and isinstance(data["query"], dict):
                 query.update(data["query"])   # ✅ 중첩 query 병합
 
-        raw_text = query.get("raw_text")
+        raw_text = query.get("raw_text") or query.get("요청문")
         if isinstance(raw_text, dict):
             raw_text = ""
 
@@ -887,7 +887,7 @@ def update_member_func(data: dict = None):
         print("DEBUG update_member_func >>> data =", data)
         print("DEBUG update_member_func >>> query =", query)
         print("DEBUG update_member_func >>> member_name =", member_name)
-
+        print(">>> raw_text =", raw_text)  # ✅ 추가
 
         # --------------------------
         # 2. 수정할 필드/값 추출
@@ -932,6 +932,7 @@ def update_member_func(data: dict = None):
                         member_name, raw_field, new_value = groups
                     elif len(groups) == 4:
                         member_name, raw_field, _, new_value = groups
+                    print(">>> 자연어 파싱 결과:", member_name, raw_field, new_value)
 
                     normalized_field = field_map.get(raw_field.strip(), raw_field.strip())
                     updates[normalized_field] = new_value.strip()

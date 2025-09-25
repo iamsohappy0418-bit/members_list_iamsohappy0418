@@ -417,7 +417,14 @@ def post_intent():
         intent = refined_intent
         g.intent = intent
         g.query = parsed.get("query", {}) or {}
+
+    # ✅ 여기 추가 (raw_text 세팅)
+    if isinstance(g.query, dict):
+        g.query["raw_text"] = initial_text  # 원본 자연어 그대로 저장    
+        
+    
     print(f"[INTENT 최종 확정 결과] intent={intent}, query={g.query}")
+
 
     # ✅ keywords 보정 (검색어 → keywords로 변환)
     if intent == "memo_search":
