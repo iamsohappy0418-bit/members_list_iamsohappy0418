@@ -1147,7 +1147,8 @@ def commission_route():
 
 
 # 잘 정리 했음
-
+# 동작함
+# 동작우선 
 
 
 
