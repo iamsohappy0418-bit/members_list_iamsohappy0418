@@ -37,6 +37,7 @@ from .sheets import (
     get_member_info, 
     get_gsheet_data,
     openai_vision_extract_orders,
+    
 )
 
 # =====================================================
@@ -73,7 +74,7 @@ from .utils import (
     clean_order_query,
     fallback_natural_search,
     format_memo_results,
-   
+    get_member_fields,
 )
 
 # --------------------------------------------------
@@ -113,12 +114,12 @@ __all__ = [
     "run_intent_func",
     "extract_order_from_uploaded_image", "parse_order_from_text",
 
-    "normalize_request_data"
-    "clean_memo_query"
-    "clean_order_query"
-    "fallback_natural_search"
-    "format_memo_results"
-   
+    "normalize_request_data",
+    "clean_memo_query",
+    "clean_order_query",
+    "fallback_natural_search",
+    "format_memo_results",
+    "get_member_fields",
 ]
 
 

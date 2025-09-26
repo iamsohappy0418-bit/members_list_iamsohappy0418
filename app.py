@@ -129,6 +129,10 @@ from routes.intent_map import (
 
 
 from routes import search_memo_core
+import re
+from parser import field_map
+from utils import get_member_fields
+from utils import fallback_natural_search, normalize_code_query
 
 
 
@@ -289,11 +293,24 @@ def preprocess_input():
     if request.endpoint == "post_intent":
         return None
 
+
+
+
     if request.method == "POST":
         data = request.get_json(silent=True) or {}
 
-        # ✅ 문자열만 안전하게 뽑아서 strip
+        # data가 str일 경우 dict로 래핑
+        if isinstance(data, str):
+            data = {"query": data}
+
         q = data.get("text")
+        if not isinstance(q, str):
+            q = data.get("query") if isinstance(data.get("query"), str) else ""
+        q = q.strip()
+
+
+
+
         if not isinstance(q, str):
             q = data.get("query") if isinstance(data.get("query"), str) else ""
         q = q.strip()
@@ -543,9 +560,6 @@ def guess_intent_entry():
 
 
 
-
-
-from parser.parse import field_map
 # ======================================================================================
 # nlu_to_pc_input 엔드포인트
 # ======================================================================================
@@ -613,35 +627,61 @@ def nlu_to_pc_input(text: str) -> dict:
 
 
 
+
+
+
     # 회원 수정
     if any(word in text for word in ["수정", "회원수정", "회원변경", "회원 수정", "회원 변경"]):
-        # 케이스1: "<이름> <필드> 수정 <값>"
+        # 🟢 케이스1: "<이름> 수정 ..." → 다중 필드 처리
+        m = re.match(r"^([가-힣]{2,4})\s+(?:수정|변경)\s+(.+)$", text)
+        if m:
+            member_name, fields_text = m.groups()
+            updates = {}
+
+            # 쉼표(,) 또는 '그리고' 기준으로 필드 나누기
+            parts = re.split(r"[,\s]+그리고\s+|,", fields_text)
+            for part in parts:
+                part = part.strip()
+                if not part:
+                    continue
+
+
+                # 필드 + 값 (예: "주소 서울시 강남구")
+                m2 = re.match(r"(\S+)\s+(.+)", part)
+                if m2:
+                    raw_field, new_value = m2.groups()
+                    normalized_field = field_map.get(raw_field, raw_field)
+
+                    # DB 시트 필드만 허용
+                    if normalized_field in get_member_fields():
+                        updates[normalized_field] = new_value.strip()
+
+
+
+            if updates:
+                return {
+                    "intent": "update_member",
+                    "query": {"회원명": member_name, **updates}
+                }
+
+       
+        # 케이스2: "<이름> <필드> 수정 <값>" (단일 필드)
         m = re.match(r"^([가-힣]{2,4})\s+(\S+)\s+(수정|변경|업데이트)\s+(.+)$", text)
         if m:
             member_name, raw_field, _, new_value = m.groups()
-            normalized_field = field_map.get(raw_field, raw_field)
-            return {
-                "intent": "update_member",
-                "query": {
-                    "회원명": member_name,
-                    normalized_field: new_value.strip()
+            normalized_field = field_map.get(raw_field, raw_field)   # ✅ field_map 사용
+            if normalized_field in get_member_fields():              # ✅ DB 시트 필드만 허용
+                return {
+                    "intent": "update_member",
+                    "query": {
+                        "회원명": member_name,
+                        normalized_field: new_value.strip()
+                    }
                 }
-            }
-
-        # 케이스2: "회원수정 <이름> <내용>"
-        m = re.match(r"^(?:회원)?\s*(?:수정|변경)\s*([가-힣]{2,4})\s+(.+)$", text)
-        if m:
-            member_name, request_text = m.groups()
-            return {
-                "intent": "update_member",
-                "query": {
-                    "회원명": member_name,
-                    "요청문": request_text
-                }
-            }
 
         # fallback
         return {"intent": "update_member", "query": {"raw_text": text}}
+
 
 
 

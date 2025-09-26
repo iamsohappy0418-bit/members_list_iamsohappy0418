@@ -151,6 +151,16 @@ def search_member_func(name):
         if not name or not isinstance(name, str):
             return {"status": "error", "message": "회원 이름(name)이 필요합니다.", "http_status": 400}
 
+        # 🟢 불필요한 꼬리 단어 제거 (조회, 검색 등)
+        cleaned = name.strip()
+        for token in ["회원조회", "회원 검색", "회원조회", "회원검색", "조회", "검색"]:
+            if cleaned.endswith(token):
+                cleaned = cleaned.replace(token, "").strip()
+        name = cleaned
+
+
+
+
         result = find_member_logic(name)
 
         if result.get("status") != "success":

@@ -27,6 +27,7 @@ from .parse import (
     parse_deletion_request, parse_deletion_request_compat,
     parse_conditions,
     preprocess_user_input,
+    field_map,
 )
 
 # --------------------------
@@ -81,6 +82,7 @@ __all__ = [
     "parse_request", "parse_deletion_request", "parse_deletion_request_compat",
     "parse_conditions",
     "preprocess_user_input",
+    "field_map"
 
     # 메모 파서
     "parse_request_line", "parse_memo",
