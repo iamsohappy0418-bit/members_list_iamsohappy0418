@@ -168,8 +168,32 @@ def search_member_func(name):
             return {**result, "http_status": 404}
 
         members = result.get("results", [])
+
+
+
+
+
         if not members:
             return {"status": "error", "message": f"{name}에 해당하는 회원이 없습니다.", "http_status": 404}
+
+        # ✅ 동명이인 처리
+        if len(members) > 1:
+            return {
+                "status": "need_choice",   # ✅ 통일된 상태 코드
+                "message": f"⚠️ 동일 이름 회원 '{name}'이(가) {len(members)}명 있습니다. 번호를 선택하세요.",
+                "candidates": [
+                    {
+                        "choice": i + 1,
+                        "회원명": m.get("회원명"),
+                        "회원번호": m.get("회원번호"),
+                        "휴대폰번호": m.get("휴대폰번호")
+                    }
+                    for i, m in enumerate(members)
+                ],
+                "http_status": 200,
+            }
+
+
 
         # ✅ 이름 기억 (전체정보용)
         g.query["last_name"] = name
@@ -714,7 +738,15 @@ def save_member_func():
 # ======================================================================================
 def delete_member_func(data=None):
     """
-    회원 삭제 함수
+    회원 삭제 함수 (회원 전체 삭제 + 특정 필드 삭제 지원)
+    - 자연어 입력:
+        "회원명 휴대폰번호 삭제"
+        "회원명 삭제 휴대폰번호, 주소"
+        "회원명 제거 메모 그리고 코드"
+    - JSON 입력:
+        {"회원명": "이판수", "삭제필드": ["주소", "코드"]}
+    - 회원 전체 삭제:
+        "회원명 삭제"
     """
     try:
         query = data or getattr(g, "query", {})
@@ -723,16 +755,15 @@ def delete_member_func(data=None):
         if isinstance(query, dict) and "query" in query and isinstance(query["query"], dict):
             query = query["query"]
 
-        # 🔽 여기에 추가하세요!
         if isinstance(query, str):
             from utils import fallback_natural_search
             query = fallback_natural_search(query)
 
-
-
-        # 🔽 여기에 추가하세요!
         print("[DEBUG] query:", query)
 
+        raw_text = query.get("raw_text") or query.get("요청문", "")
+        if isinstance(raw_text, dict):
+            raw_text = ""
 
         name = (
             query.get("회원명")
@@ -741,10 +772,9 @@ def delete_member_func(data=None):
             or ""
         ).strip()
 
-        # 🔽 그리고 여기에 추가하세요!
         print("[DEBUG] name:", name)
 
-        choice = str(query.get("choice", "")).strip()  # 선택번호(문자열 처리)
+        choice = str(query.get("choice", "")).strip()
 
         if not name:
             return {
@@ -754,50 +784,97 @@ def delete_member_func(data=None):
             }
 
         # ✅ DB 시트에서 이름으로 검색
-        rows = get_rows_from_sheet("DB")
-        matches = [
-            r for r in rows
-            if str(r.get("회원명", "")).strip() == name
+        sheet = get_member_sheet()
+        rows = sheet.get_all_records()
+        headers = sheet.row_values(1)
+
+        candidates = [
+            (idx, row)
+            for idx, row in enumerate(rows, start=2)
+            if str(row.get("회원명", "")).strip() == name
         ]
 
-        if not matches:
+        if not candidates:
             return {
                 "status": "error",
                 "message": f"{name} 회원을 찾을 수 없습니다.",
                 "http_status": 404
             }
 
-        # ✅ 동일인 다수일 때 → 리스트 반환
-        if len(matches) > 1 and not choice:
-            numbered = [
-                {"번호": i + 1, "회원명": r.get("회원명"), "회원번호": r.get("회원번호"), "휴대폰번호": r.get("휴대폰번호")}
-                for i, r in enumerate(matches)
-            ]
+        # ✅ 동명이인 처리
+        if len(candidates) > 1 and not choice:
             return {
-                "status": "pending",
+
+                "status": "need_choice",
+
                 "message": f"{name} 회원이 여러 명 존재합니다. 삭제할 번호(choice)를 선택하세요.",
-                "candidates": numbered,
+                "candidates": [
+                    {"번호": i + 1, "회원명": r.get("회원명"), "회원번호": r.get("회원번호"), "휴대폰번호": r.get("휴대폰번호")}
+                    for i, r in enumerate([c[1] for c in candidates])
+                ],
                 "http_status": 200
             }
 
-        # ✅ choice 입력받은 경우
-        if len(matches) > 1 and choice:
-            try:
-                idx = int(choice) - 1
-                target = matches[idx]
-            except (ValueError, IndexError):
-                return {
-                    "status": "error",
-                    "message": f"유효하지 않은 choice 값입니다. (1 ~ {len(matches)} 중 선택)",
-                    "http_status": 400
-                }
-        else:
-            target = matches[0]
+        target_row = candidates[0][0] if len(candidates) == 1 else candidates[int(choice) - 1][0]
 
-        member_number = target.get("회원번호", "")
+        # --------------------------
+        # 🔽 필드 삭제 요청 처리
+        # --------------------------
+        fields_to_delete = []
+
+        # JSON 입력: 삭제필드 리스트 지원
+        if isinstance(query, dict) and "삭제필드" in query and isinstance(query["삭제필드"], list):
+            for f in query["삭제필드"]:
+                normalized_field = field_map.get(f, f)
+                if normalized_field in MEMBER_FIELDS and normalized_field != "회원명":
+                    fields_to_delete.append(normalized_field)
+
+        # 자연어 입력 처리
+        if isinstance(raw_text, str) and raw_text:
+            # 패턴1: "<이름> 필드1, 필드2 삭제"
+            m1 = re.match(rf"^{name}\s+(.+?)\s*(삭제|제거|지워줘|없애)$", raw_text)
+            # 패턴2: "<이름> (삭제|제거) 필드1, 필드2"
+            m2 = re.match(rf"^{name}\s+(삭제|제거|지워줘|없애)\s+(.+)$", raw_text)
+
+            if m1:
+                fields_text = m1.group(1)
+            elif m2:
+                fields_text = m2.group(2)
+            else:
+                fields_text = ""
+
+            if fields_text:
+                # 쉼표/그리고 분리
+                parts = re.split(r"[,\s]+그리고\s+|,", fields_text)
+                for part in parts:
+                    part = part.strip()
+                    if not part:
+                        continue
+                    normalized_field = field_map.get(part, part)
+                    if normalized_field in MEMBER_FIELDS and normalized_field != "회원명":
+                        fields_to_delete.append(normalized_field)
+
+        if fields_to_delete:
+            updated = []
+            for field in fields_to_delete:
+                if field in headers:
+                    col = headers.index(field) + 1
+                    safe_update_cell(sheet, target_row, col, "")
+                    updated.append(field)
+
+            return {
+                "status": "success",
+                "message": f"✅ 회원 [{name}]의 [{', '.join(updated)}] 항목 삭제 완료",
+                "deleted_fields": updated,
+                "http_status": 200,
+            }
+
+        # --------------------------
+        # 🔽 회원 전체 삭제 처리
+        # --------------------------
+        member_number = candidates[0][1].get("회원번호", "")
         result = delete_member_internal(name, member_number)
 
-        # ✅ dict / tuple / bool 대응
         if isinstance(result, dict):
             return {**result, "http_status": result.get("http_status", 200)}
         elif isinstance(result, tuple):
@@ -821,6 +898,7 @@ def delete_member_func(data=None):
             "message": str(e),
             "http_status": 500
         }
+
 
 
 
@@ -884,11 +962,22 @@ def update_member_func(data: dict = None):
 
         member_name = query.get("회원명")
 
+
+
+
         # ✅ raw_text에서 회원명 추출 시도
-        if not member_name and isinstance(raw_text, str):
-            m = re.match(r"^([가-힣]{2,4})\s+(수정|변경|업데이트)\s+", raw_text)
-            if m:
-                member_name = m.group(1)
+        # 케이스A: "<이름> 수정|변경|업데이트 ..."
+        m = re.match(r"^([가-힣]{2,4})\s+(수정|변경|업데이트)\s+", raw_text)
+        if m:
+            member_name = m.group(1)
+    
+        # 케이스B: "회원수정|회원변경|회원업데이트 <이름> ..."
+        m0 = re.match(r"^회원\s*(수정|변경|업데이트)\s*([가-힣]{2,4})\s+", raw_text)
+        if m0:
+            member_name = m0.group(2)
+
+
+
 
 
         print("DEBUG update_member_func >>> data =", data)
@@ -918,31 +1007,43 @@ def update_member_func(data: dict = None):
                     updates["휴대폰번호"] = format_phone(v)
 
        
-        # ✅ 자연어 기반 필드 추출
+      
+        # ✅ 자연어 기반 필드 처리
         if isinstance(raw_text, str) and raw_text:
-            # 케이스1: "<이름> 수정 ..." (여러 필드 동시에)
-            m = re.match(r"^([가-힣]{2,4})\s+(?:수정|변경)\s+(.+)$", raw_text)
-            if m:
-                member_name, fields_text = m.groups()
+            # 케이스0: "회원수정|회원변경|회원업데이트 <이름> ..." (여러 필드)
+            m0 = re.match(r"^회원\s*(수정|변경|업데이트)\s*([가-힣]{2,4})\s+(.+)$", raw_text)
+            if m0:
+                _, member_name, fields_text = m0.groups()
+
+            else:
+                # 케이스1: "<이름> 수정|변경|업데이트 ..." (여러 필드)
+                m1 = re.match(r"^([가-힣]{2,4})\s+(?:수정|변경|업데이트)\s+(.+)$", raw_text)
+                if m1:
+                    member_name, fields_text = m1.groups()
+                else:
+                    # 케이스2: "<이름> <필드> 수정|변경|업데이트 <값>" (단일 필드)
+                    m2 = re.match(r"^([가-힣]{2,4})\s+(\S+)\s+(수정|변경|업데이트)\s+(.+)$", raw_text)
+                    if m2:
+                        member_name, raw_field, _, new_value = m2.groups()
+                        normalized_field = field_map.get(raw_field, raw_field)
+                        if normalized_field == "회원명":
+                            return {"status": "error", "message": "❌ 회원명은 수정할 수 없습니다.", "http_status": 400}
+                        if normalized_field in MEMBER_FIELDS:
+                            updates[normalized_field] = new_value.strip()
+
+            # 여러 필드 처리 (쉼표/그리고)
+            if "fields_text" in locals():
                 parts = re.split(r"[,\s]+그리고\s+|,", fields_text)
                 for part in parts:
                     part = part.strip()
                     if not part:
                         continue
-
                     m2 = re.match(r"(\S+)\s+(.+)", part)
                     if m2:
                         raw_field, new_value = m2.groups()
                         normalized_field = field_map.get(raw_field, raw_field)
-
-                        # ❌ 회원명은 수정 불가
                         if normalized_field == "회원명":
-                            return {
-                                "status": "error",
-                                "message": "❌ 회원명은 수정할 수 없습니다.",
-                                "http_status": 400
-                            }
-
+                            return {"status": "error", "message": "❌ 회원명은 수정할 수 없습니다.", "http_status": 400}
                         if normalized_field in MEMBER_FIELDS:
                             updates[normalized_field] = new_value.strip()
                     else:
@@ -951,29 +1052,12 @@ def update_member_func(data: dict = None):
                             if k in MEMBER_FIELDS and k != "회원명":
                                 updates[k] = v
 
-            else:
-                # 케이스2: "<이름> <필드> 수정 <값>"
-                m = re.match(r"^([가-힣]{2,4})\s+(\S+)\s+(수정|변경|업데이트)\s+(.+)$", raw_text)
-                if m:
-                    member_name, raw_field, _, new_value = m.groups()
-                    normalized_field = field_map.get(raw_field, raw_field)
-
-                    # ❌ 회원명은 수정 불가
-                    if normalized_field == "회원명":
-                        return {
-                            "status": "error",
-                            "message": "❌ 회원명은 수정할 수 없습니다.",
-                            "http_status": 400
-                        }
-
-                    if normalized_field in MEMBER_FIELDS:
-                        updates[normalized_field] = new_value.strip()
-
-            # 케이스3: "<이름> 수정 특수번호 XXX" 직접 처리
-            m = re.match(r"^([가-힣]{2,4})\s+(?:수정|변경)\s+특수번호\s+(.+)$", raw_text)
-            if m:
-                member_name, new_value = m.groups()
+            # 케이스3: "<이름> 수정 특수번호 XXX"
+            m3 = re.match(r"^([가-힣]{2,4})\s+(?:수정|변경|업데이트)\s+특수번호\s+(.+)$", raw_text)
+            if m3:
+                member_name, new_value = m3.groups()
                 updates["특수번호"] = new_value.strip()
+
 
 
 
