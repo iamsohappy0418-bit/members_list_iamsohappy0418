@@ -131,10 +131,13 @@ def safe_update_cell(sheet, row, col, value, clear_first=True, max_retries=3, de
         try:
             if clear_first:
                 sheet.update_cell(row, col, "")
+
+            print(f"[DEBUG] 시트 업데이트: row={row}, col={col}, value={value}")
             sheet.update_cell(row, col, value)
             return True
         except APIError as e:
             if "429" in str(e):
+           
                 print(f"[⏳ 재시도 {attempt}] 429 오류 → {delay}초 대기")
                 time.sleep(delay)
                 delay *= 2

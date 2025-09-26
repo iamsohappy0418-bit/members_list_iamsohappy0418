@@ -27,11 +27,12 @@ from parser.parse import field_map
 
 SHEET_NAME_DB = "DB"  # 매직스트링 방지
 
-from parser.parse import field_map
 
+from parser import field_map
+from utils import get_member_fields
+from utils import fallback_natural_search, normalize_code_query
 
-
-
+from utils.sheets import get_member_sheet, safe_update_cell
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -829,16 +830,14 @@ def delete_member_func(data=None):
 
 
 
-from parser.parse import field_map
 
 
 # ======================================================================================
 # ✅ 자연어 요청 회원 삭제 라우트
 # ======================================================================================
 
-import re
-from flask import g
-from utils.sheets import get_member_sheet, safe_update_cell
+
+
 
 # ✅ member_fields.py
 MEMBER_FIELDS = [
@@ -847,12 +846,6 @@ MEMBER_FIELDS = [
     "유효기간", "비번", "카드생년월일", "분류", "회원단계", "연령/성별", "직업", "가족관계",
     "니즈", "애용제품", "콘텐츠", "습관챌린지", "비즈니스시스템", "GLC프로젝트", "리더님", "특수번호"
     ]
-
-
-
-
-
-
 
 
 # 전화번호 포맷 함수 (없으면 추가)
@@ -891,92 +884,127 @@ def update_member_func(data: dict = None):
 
         member_name = query.get("회원명")
 
-        # --------------------------
-        # 🔎 디버깅 로그 추가
-        # --------------------------
+        # ✅ raw_text에서 회원명 추출 시도
+        if not member_name and isinstance(raw_text, str):
+            m = re.match(r"^([가-힣]{2,4})\s+(수정|변경|업데이트)\s+", raw_text)
+            if m:
+                member_name = m.group(1)
+
+
         print("DEBUG update_member_func >>> data =", data)
         print("DEBUG update_member_func >>> query =", query)
         print("DEBUG update_member_func >>> member_name =", member_name)
-        print(">>> raw_text =", raw_text)  # ✅ 추가
+        print(">>> raw_text =", raw_text)
 
         # --------------------------
         # 2. 수정할 필드/값 추출
         # --------------------------
         updates = {}
 
-        # JSON 입력 기반 (field_map 적용)
-        # JSON 입력 기반 (MEMBER_FIELDS 직접 사용)
-        # 개선된 필드 추출 (자연어 매핑 포함)
+        # ✅ JSON 기반 필드 처리
         for key, value in query.items():
             standard_key = field_map.get(key, key)
             if standard_key in MEMBER_FIELDS and standard_key != "회원명":
                 updates[standard_key] = value.strip() if isinstance(value, str) else value
 
-
-
-
-
-        # 숫자 기반 판별 (회원번호, 휴대폰번호)
+        # ✅ 숫자 기반 (휴대폰번호, 회원번호)
         for k, v in query.items():
             if isinstance(v, str):
                 digits = re.sub(r"\D", "", v)
-                if digits:
+                if digits == v:  # 숫자만 있을 때만 회원번호로 간주
                     if re.fullmatch(r"\d{5,8}", digits):
                         updates["회원번호"] = digits
-                    elif re.fullmatch(r"010\d{8}", digits):
-                        updates["휴대폰번호"] = format_phone(v)
+                if re.fullmatch(r"010\d{8}", digits):
+                    updates["휴대폰번호"] = format_phone(v)
 
        
-        # 개선된 자연어 파싱: 다양한 문장 구조 지원
+        # ✅ 자연어 기반 필드 추출
         if isinstance(raw_text, str) and raw_text:
-            patterns = [
-                r"회원수정\s+([가-힣]{2,4})\s+(주소|휴대폰번호|[^,]+)\s+(.+)",  # 회원수정 이판주 주소 서울시...
-                r"([가-힣]{2,4})\s+(주소|휴대폰번호|[^,]+)\s+(수정|변경|업데이트)\s+(.+)",  # 이판주 주소 수정 서울시...
-            ]
+            # 케이스1: "<이름> 수정 ..." (여러 필드 동시에)
+            m = re.match(r"^([가-힣]{2,4})\s+(?:수정|변경)\s+(.+)$", raw_text)
+            if m:
+                member_name, fields_text = m.groups()
+                parts = re.split(r"[,\s]+그리고\s+|,", fields_text)
+                for part in parts:
+                    part = part.strip()
+                    if not part:
+                        continue
 
-            for pat in patterns:
-                m = re.match(pat, raw_text)
+                    m2 = re.match(r"(\S+)\s+(.+)", part)
+                    if m2:
+                        raw_field, new_value = m2.groups()
+                        normalized_field = field_map.get(raw_field, raw_field)
+
+                        # ❌ 회원명은 수정 불가
+                        if normalized_field == "회원명":
+                            return {
+                                "status": "error",
+                                "message": "❌ 회원명은 수정할 수 없습니다.",
+                                "http_status": 400
+                            }
+
+                        if normalized_field in MEMBER_FIELDS:
+                            updates[normalized_field] = new_value.strip()
+                    else:
+                        inferred = fallback_natural_search(part)
+                        for k, v in inferred.items():
+                            if k in MEMBER_FIELDS and k != "회원명":
+                                updates[k] = v
+
+            else:
+                # 케이스2: "<이름> <필드> 수정 <값>"
+                m = re.match(r"^([가-힣]{2,4})\s+(\S+)\s+(수정|변경|업데이트)\s+(.+)$", raw_text)
                 if m:
-                    groups = m.groups()
-                    if len(groups) == 3:
-                        member_name, raw_field, new_value = groups
-                    elif len(groups) == 4:
-                        member_name, raw_field, _, new_value = groups
-                    print(">>> 자연어 파싱 결과:", member_name, raw_field, new_value)
+                    member_name, raw_field, _, new_value = m.groups()
+                    normalized_field = field_map.get(raw_field, raw_field)
 
-                    normalized_field = field_map.get(raw_field.strip(), raw_field.strip())
-                    updates[normalized_field] = new_value.strip()
-                    break  # 첫 번째 매치 후 종료
+                    # ❌ 회원명은 수정 불가
+                    if normalized_field == "회원명":
+                        return {
+                            "status": "error",
+                            "message": "❌ 회원명은 수정할 수 없습니다.",
+                            "http_status": 400
+                        }
+
+                    if normalized_field in MEMBER_FIELDS:
+                        updates[normalized_field] = new_value.strip()
+
+            # 케이스3: "<이름> 수정 특수번호 XXX" 직접 처리
+            m = re.match(r"^([가-힣]{2,4})\s+(?:수정|변경)\s+특수번호\s+(.+)$", raw_text)
+            if m:
+                member_name, new_value = m.groups()
+                updates["특수번호"] = new_value.strip()
 
 
 
 
+
+        # --------------------------
+        # 3. 유효성 검사
+        # --------------------------
         if not member_name:
             return {"status": "error", "message": "❌ 회원명이 필요합니다.", "http_status": 400}
-
         if not updates:
             return {"status": "error", "message": "❌ 수정할 필드가 없습니다.", "http_status": 400}
 
         # --------------------------
-        # 3. 회원 시트 불러오기
+        # 4. 회원 검색
         # --------------------------
         sheet = get_member_sheet()
         rows = sheet.get_all_records()
         headers = sheet.row_values(1)
 
-        # --------------------------
-        # 4. 동일 이름 회원 검색
-        # --------------------------
-        candidates = []
-        for idx, row in enumerate(rows, start=2):
-            if str(row.get("회원명", "")).strip() == member_name.strip():
-                candidates.append((idx, row))
+        candidates = [
+            (idx, row)
+            for idx, row in enumerate(rows, start=2)
+            if str(row.get("회원명", "")).strip() == member_name.strip()
+        ]
 
         if not candidates:
             return {"status": "error", "message": f"❌ 회원 '{member_name}'을(를) 찾을 수 없습니다.", "http_status": 404}
 
         # --------------------------
-        # 5. choice 처리 (동명이인 대응)
+        # 5. 동명이인 처리
         # --------------------------
         choice = query.get("choice")
         if len(candidates) > 1 and not choice:
@@ -995,22 +1023,16 @@ def update_member_func(data: dict = None):
                 "http_status": 200,
             }
 
-        if len(candidates) == 1:
-            target_row = candidates[0][0]
-        else:
-            try:
-                target_row = candidates[int(choice) - 1][0]
-            except Exception:
-                return {"status": "error", "message": "❌ 올바른 choice 번호를 선택하세요.", "http_status": 400}
+        target_row = candidates[0][0] if len(candidates) == 1 else candidates[int(choice) - 1][0]
 
         # --------------------------
-        # 6. 기존 값 공란 처리 후 새 값 입력
+        # 6. 수정 반영
         # --------------------------
         for field, value in updates.items():
             if field in headers:
                 col = headers.index(field) + 1
-                safe_update_cell(sheet, target_row, col, "")   # 기존 값 비우기
-                safe_update_cell(sheet, target_row, col, value)  # 새 값 입력
+                safe_update_cell(sheet, target_row, col, "")
+                safe_update_cell(sheet, target_row, col, value)
 
         return {
             "status": "success",
@@ -1022,6 +1044,11 @@ def update_member_func(data: dict = None):
     except Exception as e:
         import traceback; traceback.print_exc()
         return {"status": "error", "message": str(e), "http_status": 500}
+
+
+
+
+
 
 
 
