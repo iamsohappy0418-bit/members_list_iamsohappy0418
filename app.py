@@ -640,11 +640,12 @@ def nlu_to_pc_input(text: str) -> dict:
 
             # 쉼표(,) 또는 '그리고' 기준으로 필드 나누기
             parts = re.split(r"[,\s]+그리고\s+|,", fields_text)
+
+
             for part in parts:
                 part = part.strip()
                 if not part:
                     continue
-
 
                 # 필드 + 값 (예: "주소 서울시 강남구")
                 m2 = re.match(r"(\S+)\s+(.+)", part)
@@ -655,6 +656,13 @@ def nlu_to_pc_input(text: str) -> dict:
                     # DB 시트 필드만 허용
                     if normalized_field in get_member_fields():
                         updates[normalized_field] = new_value.strip()
+
+                else:
+                    # ✅ 필드 없이 값만 있을 경우 fallback 처리
+                    inferred = fallback_natural_search(part)
+                    for k, v in inferred.items():
+                        if k in get_member_fields():
+                            updates[k] = v
 
 
 
@@ -681,6 +689,15 @@ def nlu_to_pc_input(text: str) -> dict:
 
         # fallback
         return {"intent": "update_member", "query": {"raw_text": text}}
+
+
+
+
+
+
+
+
+
 
 
 
