@@ -31,7 +31,8 @@ from utils.sheets import (
     get_rows_from_sheet,
 )
 
-
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_API_URL = os.getenv("OPENAI_API_URL")
 
 
 def get_member_fields() -> list:
@@ -1232,7 +1233,7 @@ def extract_order_from_uploaded_image(image_bytes):
     """
     주문서 이미지에서 JSON 구조의 주문 데이터를 추출합니다.
     - 입력: BytesIO 이미지
-    - 출력: { "orders": [...] } 구조
+    - 출력: { "orders": [...] } 또는 {"error": ..., "raw_text": ...}
     """
     image_base64 = base64.b64encode(image_bytes.getvalue()).decode("utf-8")
 
@@ -1266,21 +1267,30 @@ def extract_order_from_uploaded_image(image_bytes):
         "temperature": 0
     }
 
-    response = requests.post(OPENAI_API_URL, headers=headers, json=payload)
-    response.raise_for_status()
+    try:
+        response = requests.post(OPENAI_API_URL, headers=headers, json=payload)
+        response.raise_for_status()
+        result_text = response.json()["choices"][0]["message"]["content"]
+    except Exception as e:
+        return {"error": f"OpenAI API 호출 실패: {str(e)}"}
 
-    result_text = response.json()["choices"][0]["message"]["content"]
-
-    # 코드블록 제거
-    clean_text = re.sub(r"```(?:json)?", "", result_text).strip()
+    # ✅ 코드블록 전체 제거
+    clean_text = re.sub(r"```(?:json)?(.*?)```", r"\1", result_text, flags=re.DOTALL).strip()
 
     try:
         order_data = json.loads(clean_text)
+        if not isinstance(order_data, dict) or "orders" not in order_data:
+            return {"error": "orders 필드가 없습니다", "raw_text": result_text}
         return order_data
     except json.JSONDecodeError:
-        return {"raw_text": result_text}
+        return {"error": "JSON 파싱 실패", "raw_text": result_text}
+
     
-    
+
+
+
+
+
 
 # --------------------------------------------------
 # GPT Chat: 자연어 → 주문 JSON
@@ -1337,3 +1347,7 @@ def normalize_request_data():
 
 
 
+# utils/utils.py
+def get_openai_api_key():
+    from app import OPENAI_API_KEY
+    return OPENAI_API_KEY

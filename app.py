@@ -726,8 +726,8 @@ def nlu_to_pc_input(text: str) -> dict:
         if any(word in order_text for word in ["등록", "추가", "저장"]):
             m = re.search(r"([가-힣]{2,4}).*(제품)?주문", order_text)
             if m:
-                return {"intent": "register_order", "query": {"회원명": m.group(1)}}
-            return {"intent": "register_order", "query": {"raw_text": text}}
+                return {"intent": "order_upload_func", "query": {"회원명": m.group(1)}}
+            return {"intent": "order_upload_func", "query": {"raw_text": text}}
 
         # 수정/변경/업데이트
         if any(word in order_text for word in ["수정", "변경", "업데이트"]):

@@ -14,6 +14,11 @@ def _norm(s):
 def _ok(res) -> bool:
     return bool(res) and (res.get("status") in {"ok", "success", True})
 
+
+
+
+
+
 def _get_text_from_g() -> str:
     """
     g.query에서 주문 자연어 텍스트를 안전하게 추출
@@ -45,6 +50,11 @@ def _is_structured_order(obj: dict) -> bool:
         "주문", "주문회원", "items", "상품", "order", "member", "date", "결제", "수량"
     }
     return any(k in obj for k in candidate_keys)
+
+
+
+
+
 
 
 def order_auto_func():
@@ -79,6 +89,12 @@ def order_auto_func():
         return {"status": "error", "message": str(e), "http_status": 500}
 
 
+
+
+
+
+
+
 def order_nl_func():
     """
     자연어 주문 처리
@@ -105,6 +121,13 @@ def order_nl_func():
     except Exception as e:
         import traceback; traceback.print_exc()
         return {"status": "error", "message": str(e), "http_status": 500}
+
+
+
+
+
+
+
 
 
 def order_upload_func():
