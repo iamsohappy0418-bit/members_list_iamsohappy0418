@@ -45,7 +45,7 @@ from utils import (
     get_member_sheet, get_product_order_sheet,
     get_counseling_sheet, get_personal_memo_sheet,
     get_activity_log_sheet, get_commission_sheet,
-    safe_update_cell, delete_row,
+    safe_update_cell, delete_row, append_row,
 
     # 검색
     find_all_members_from_sheet, fallback_natural_search,
@@ -1552,32 +1552,26 @@ def addOrders(payload: dict) -> dict:
 # ===============================================
 # ✅ 주문 시트 저장
 # ===============================================
+# -----------------------------
+# 주문 저장 함수
+# -----------------------------
 def handle_order_save(data: dict):
-    """
-    파싱된 주문 데이터를 Google Sheets '제품주문' 시트에 저장합니다.
-    - 중복 체크 (회원명 + 제품명 + 주문일자 기준)
-    """
     sheet = get_worksheet("제품주문")
     if not sheet:
-        raise Exception("제품주문 시트를 찾을 수 없습니다.")
+        return {"http_status": 500, "status": "error", "message": "제품주문 시트를 찾을 수 없습니다."}
 
+    # ✅ 주문일자 변환
     order_date = process_order_date(data.get("주문일자", ""))
     row = [
-        order_date,
-        data.get("회원명", ""),
-        data.get("회원번호", ""),
-        data.get("휴대폰번호", ""),
-        data.get("제품명", ""),
-        float(data.get("제품가격", 0)),
-        float(data.get("PV", 0)),
-        data.get("결재방법", ""),
-        data.get("주문자_고객명", ""),
-        data.get("주문자_휴대폰번호", ""),
-        data.get("배송처", ""),
-        data.get("수령확인", "")
+        order_date, data.get("회원명", ""), data.get("회원번호", ""), data.get("휴대폰번호", ""),
+        data.get("제품명", ""), float(data.get("제품가격", 0)), float(data.get("PV", 0)),
+        data.get("결재방법", ""), data.get("주문자_고객명", ""), data.get("주문자_휴대폰번호", ""),
+        data.get("배송처", ""), data.get("수령확인", "")
     ]
 
     values = sheet.get_all_values()
+
+    # ✅ 헤더 없으면 생성
     if not values:
         headers = [
             "주문일자", "회원명", "회원번호", "휴대폰번호",
@@ -1585,15 +1579,25 @@ def handle_order_save(data: dict):
             "주문자_고객명", "주문자_휴대폰번호", "배송처", "수령확인"
         ]
         sheet.append_row(headers)
+        values = [headers]
 
-    for existing in values[1:]:
-        if (existing[0] == order_date and
-            existing[1] == data.get("회원명") and
-            existing[4] == data.get("제품명")):
-            print("⚠️ 이미 동일한 주문이 존재하여 저장하지 않음")
-            return
-
+    # ✅ 항상 맨 위(2행)에 삽입
     sheet.insert_row(row, index=2)
+
+    # ✅ 최신 주문(2행) 조회
+    latest = sheet.row_values(2)
+    headers = values[0]
+    latest_order = dict(zip(headers, latest))
+
+    return {
+        "http_status": 200,
+        "status": "ok",
+        "message": "✅ 주문이 새로 저장되었습니다.",
+        "latest_order": latest_order
+    }
+
+
+
 
 
 # ===============================================
@@ -1604,13 +1608,15 @@ def handle_product_order(text: str, member_name: str):
     자연어 문장을 파싱 후 제품 주문을 저장합니다.
     """
     try:
-        from parser.parser.parse_order import parse_order_text
+        from parser import parse_order_text
         parsed = parse_order_text(text)
         parsed["회원명"] = member_name
         handle_order_save(parsed)
         return jsonify({"message": f"{member_name}님의 제품주문 저장이 완료되었습니다."})
     except Exception as e:
         return jsonify({"error": f"제품주문 처리 중 오류 발생: {str(e)}"}), 500
+
+
 
 
 # ===============================================

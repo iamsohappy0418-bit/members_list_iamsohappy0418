@@ -245,12 +245,19 @@ def debug_sheets():
             ws = get_worksheet(target)
             headers = ws.row_values(1)
 
-        return jsonify({
-            "sheets": sheet_names,
-            "headers": headers
-        }), 200
+        # ✅ 여기서 json.dumps + ensure_ascii=False 사용
+        return app.response_class(
+            response=json.dumps({"sheets": sheet_names, "headers": headers}, ensure_ascii=False),
+            status=200,
+            mimetype="application/json"
+        )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return app.response_class(
+            response=json.dumps({"error": str(e)}, ensure_ascii=False),
+            status=500,
+            mimetype="application/json"
+        )
+
 
 
 
@@ -287,39 +294,43 @@ def run_intent_func(func, query=None, options=None):
 @app.before_request
 def preprocess_input():
     """
+    요청 전처리
     1. /postIntent → 그대로 통과
-    2. 다른 라우트에 자연어 입력이 들어오면 → /postIntent 로 우회
+    2. POST JSON 입력이 있으면 g.query 에 저장
+    3. 자연어(str)만 들어온 경우 → post_intent() 로 우회
     """
     if request.endpoint == "post_intent":
         return None
 
-
-
-
     if request.method == "POST":
         data = request.get_json(silent=True) or {}
 
-        # data가 str일 경우 dict로 래핑
+        # ✅ g.query 항상 세팅
+        from flask import g
         if isinstance(data, str):
-            data = {"query": data}
+            # 문자열 요청 → {"query": "..."} 로 래핑
+            g.query = {"query": data}
+        elif isinstance(data, dict):
+            g.query = data
+        else:
+            g.query = {}
 
-        q = data.get("text")
-        if not isinstance(q, str):
-            q = data.get("query") if isinstance(data.get("query"), str) else ""
-        q = q.strip()
+        # -------------------------------
+        # 자연어 판별 → post_intent 우회
+        # -------------------------------
+        q = ""
+        if isinstance(g.query.get("query"), str):
+            q = g.query.get("query", "").strip()
+        elif isinstance(g.query.get("text"), str):
+            q = g.query.get("text", "").strip()
 
-
-
-
-        if not isinstance(q, str):
-            q = data.get("query") if isinstance(data.get("query"), str) else ""
-        q = q.strip()
-
-        # 구조화된 JSON이 아닌 경우 → 자연어로 간주
-        if q and not ("회원명" in data or "회원번호" in data):
-            return post_intent()  # ✅ postIntent로 강제 우회
+        # 구조화 JSON이 아닌 경우 → 자연어로 간주
+        if q and not ("회원명" in g.query or "회원번호" in g.query):
+            return post_intent()
 
     return None
+
+
 
 
 
@@ -1038,7 +1049,6 @@ def order_route():
     try:
         # 0) 파일 업로드 우선 처리 (multipart/form-data)
         if hasattr(request, "files") and request.files:
-            # g.query 보정 (없을 수 있음)
             if not hasattr(g, "query") or not isinstance(g.query, dict):
                 g.query = {"intent": "order_upload", "query": {}}
             result = ORDER_INTENTS.get("order_upload", order_upload_func)()
@@ -1051,35 +1061,46 @@ def order_route():
         data = getattr(g, "query", {}) or {}
         q = data.get("query")
 
-        # 1) 자연어 판단: 문자열이거나, dict여도 text/요청문/주문문/내용만 있는 경우
+        # 1) 자연어 판단
         if isinstance(q, str):
-            return post_intent()  # ✅ 자연어면 게이트웨이로 우회
+            return post_intent()
         if isinstance(q, dict):
-            # 구조화 주문 키 후보
             structured_keys = {"items", "상품", "order", "주문", "주문회원", "member", "수량", "결제", "date"}
             text_like_keys = {"text", "요청문", "주문문", "내용"}
             if any(k in q for k in text_like_keys) and not any(k in q for k in structured_keys):
-                return post_intent()  # ✅ 텍스트성 dict → 자연어로 간주하여 우회
+                return post_intent()
 
         # 2) intent 기반 실행
         intent = data.get("intent")
         func = ORDER_INTENTS.get(intent)
 
         if not func:
-            result = {
+            return jsonify({
                 "status": "error",
                 "message": f"❌ 처리할 수 없는 주문 intent입니다. (intent={intent})",
-                "http_status": 400
-            }
-        else:
-            result = func()
+            }), 400
 
+        result = func()
+
+        # ✅ 결과 처리
         if isinstance(result, dict):
-            return jsonify(result), result.get("http_status", 200)
-        if isinstance(result, list):  # 조회 결과 같은 경우
+            http_status = result.get("http_status", 200)
+            response = {
+                "http_status": http_status,
+                "intent": intent,
+                "status": result.get("status", "ok"),
+            }
+            if result.get("saved_row"):
+                response["saved_row"] = result["saved_row"]
+            if result.get("message"):
+                response["message"] = result["message"]
+            return jsonify(response), http_status
+
+        elif isinstance(result, list):  # 조회 결과
             return jsonify(result), 200
 
-        return jsonify({"status": "error", "message": "알 수 없는 반환 형식"}), 500
+        else:
+            return jsonify({"status": "error", "message": "알 수 없는 반환 형식"}), 500
 
     except Exception as e:
         import traceback

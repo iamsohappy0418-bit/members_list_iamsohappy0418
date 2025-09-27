@@ -62,11 +62,53 @@ def get_spreadsheet():
 # --------------------------------------------------
 # ✅ 워크시트 핸들 가져오기
 # --------------------------------------------------
-def get_worksheet(sheet_name: str):
-    try:
-        return get_spreadsheet().worksheet(sheet_name)
-    except WorksheetNotFound:
-        raise FileNotFoundError(f"❌ 워크시트를 찾을 수 없습니다: {sheet_name}")
+import unicodedata
+from gspread.exceptions import WorksheetNotFound
+
+def normalize_name(name: str) -> str:
+    """시트명 비교용 정규화 (유니코드 NFC + 공백제거 + 소문자화)"""
+    if not name:
+        return ""
+    return unicodedata.normalize("NFC", name).strip().lower()
+
+
+# -----------------------------
+# 문자열 정규화
+# -----------------------------
+def normalize_text(s) -> str:
+    """문자열을 NFC 정규화 + strip 처리"""
+    if s is None:
+        return ""
+    return unicodedata.normalize("NFC", str(s)).strip()
+
+# -----------------------------
+# 워크시트 안전 조회
+# -----------------------------
+def get_worksheet(sheet_name):
+    """
+    지정된 이름의 워크시트를 가져옴.
+    - sheet_name 이 Worksheet 객체면 .title 사용
+    - 대소문자, 공백, 유니코드 차이 무시
+    """
+    sheet = get_spreadsheet()   # ✅ 기존 연결 함수 사용
+
+    # Worksheet 객체가 넘어오면 title 추출
+    if hasattr(sheet_name, "title") and not isinstance(sheet_name, str):
+        sheet_name = sheet_name.title  # Worksheet.title → 문자열
+    elif isinstance(sheet_name, str):
+        sheet_name = sheet_name.strip()
+
+    target = normalize_text(sheet_name).lower()
+
+    for ws in sheet.worksheets():
+        if normalize_text(ws.title).lower() == target:
+            return ws
+
+    raise FileNotFoundError(f"❌ 워크시트를 찾을 수 없습니다: {sheet_name}")
+
+
+
+
 
 
 # --------------------------------------------------
