@@ -49,11 +49,17 @@ from .routes_memo import (
 # 주문 관련
 # --------------------------
 from .routes_order import (
-    order_auto_func,
-    order_upload_func,
+    order_upload_pc_func,
+    order_upload_ipad_func,
     order_nl_func,
+    order_auto_func,
     save_order_proxy_func,
+    addOrders,
 )
+
+
+
+
 
 # --------------------------
 # 후원수당 관련
@@ -87,8 +93,12 @@ __all__ = [
     "search_memo_core",
 
     # 주문
-    "order_auto_func", "order_upload_func",
-    "order_nl_func", "save_order_proxy_func",
+    "order_upload_pc_func",
+    "order_upload_ipad_func",
+    "order_nl_func",
+    "order_auto_func",
+    "save_order_proxy_func",
+    "addOrders",
 
     # 후원수당
     "commission_find_auto_func", "find_commission_func", "search_commission_by_nl_func",

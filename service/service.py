@@ -318,10 +318,7 @@ def search_in_sheet(sheet_name, keywords, search_mode="any", start_date=None, en
 # =================================================
 # 주문 서비스
 # =================================================
-def addOrders(payload: dict) -> dict:
-    resp = requests.post(MEMBERSLIST_API_URL, json=payload)
-    resp.raise_for_status()
-    return resp.json()
+
 
 
 def handle_order_save(data: dict):

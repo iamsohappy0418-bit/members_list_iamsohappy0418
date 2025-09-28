@@ -50,7 +50,7 @@ from service import (
     process_member_query,
 
     # 주문
-    addOrders, handle_order_save, handle_product_order,
+    handle_order_save, handle_product_order,
     find_order, register_order, update_order,
     delete_order, delete_order_by_row, clean_order_data,
     save_order_to_sheet,
@@ -107,10 +107,14 @@ from routes import (
    
 
     # 주문
-    order_auto_func,
-    order_upload_func,
+   
+    order_upload_pc_func,
+    order_upload_ipad_func,
     order_nl_func,
+    order_auto_func,
     save_order_proxy_func,
+    addOrders,
+
 
     # 후원수당
     commission_find_auto_func,

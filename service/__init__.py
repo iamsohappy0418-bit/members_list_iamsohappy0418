@@ -26,7 +26,7 @@ from .service import (
 # 주문 서비스
 # --------------------------
 from .service import (
-    addOrders, handle_order_save, handle_product_order,
+    handle_order_save, handle_product_order,
     save_order_to_sheet, find_order, register_order,
     update_order, delete_order, delete_order_by_row,
     clean_order_data, 
@@ -56,7 +56,7 @@ __all__ = [
     "save_memo", "find_memo", "search_in_sheet", 
 
     # 주문
-    "addOrders", "handle_order_save", "handle_product_order",
+    "handle_order_save", "handle_product_order",
     "save_order_to_sheet", "find_order", "register_order",
     "update_order", "delete_order", "delete_order_by_row",
     "clean_order_data", 

@@ -14,7 +14,11 @@ from routes.routes_memo import (
     search_memo_func, search_memo_from_text_func, memo_find_auto_func,
 )
 from routes.routes_order import (
-    order_auto_func, order_upload_func, order_nl_func, save_order_proxy_func,
+    order_upload_pc_func,
+    order_upload_ipad_func,
+    order_nl_func,
+    order_auto_func,
+    save_order_proxy_func,
 )
 from routes.routes_commission import (
     commission_find_auto_func, find_commission_func, search_commission_by_nl_func,
@@ -57,13 +61,16 @@ MEMO_INTENTS = {
 
 # 주문 관련
 ORDER_INTENTS = {
-    "order_auto": order_auto_func,
-    "order_upload": order_upload_func,
+    "order_upload_pc": order_upload_pc_func,
+    "order_upload_ipad": order_upload_ipad_func,
     "order_nl": order_nl_func,
+    "order_auto": order_auto_func,
     "save_order_proxy": save_order_proxy_func,
-    "order_upload": order_upload_func,
-
 }
+
+
+
+
 
 # 후원수당 관련
 COMMISSION_INTENTS = {
@@ -79,3 +86,5 @@ INTENT_MAP = {
     **ORDER_INTENTS,
     **COMMISSION_INTENTS,
 }
+
+

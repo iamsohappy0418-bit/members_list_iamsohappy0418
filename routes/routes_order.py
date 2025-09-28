@@ -2,9 +2,14 @@ import re
 from flask import g, request
 from utils import parse_order_from_text
 from utils import extract_order_from_uploaded_image
+from utils import process_order_date
+from utils import get_worksheet
 from parser.parse import handle_product_order, save_order_to_sheet
 
 
+import os, re, io, json, base64, requests, traceback
+from flask import jsonify
+from datetime import datetime
 
 
 
@@ -128,36 +133,118 @@ def order_nl_func():
 
 
 
+def get_member_info_by_name_list(name: str) -> list[dict]:
+    """
+    DB 시트에서 회원명으로 검색하여 일치하는 회원 목록 반환
+    - 여러 명 있을 경우 순번 부여
+    - 필드: 회원번호, 휴대폰번호, 주소, 가입일자
+    """
+    sheet = get_member_sheet()
+    rows = sheet.get_all_records()
+
+    matched = [
+        {
+            "순번": i + 1,
+            "회원명": row.get("회원명", "").strip(),
+            "회원번호": str(row.get("회원번호", "")).strip(),
+            "휴대폰번호": str(row.get("휴대폰번호", "")).strip(),
+            "주소": str(row.get("주소", "")).strip(),
+            "가입일자": str(row.get("가입일자", "")).strip(),
+        }
+        for i, row in enumerate(rows)
+        if str(row.get("회원명", "")).strip() == name
+    ]
+
+    return matched
+
+
+
+
+
+
 
 
 def order_upload_func():
     """
     이미지/스캔된 주문서 업로드 처리
-    - request.files에서 첫 파일 인식 → OCR/LLM 파싱 → 저장
+    - request.files + request.form["text"] 필수
+    - 회원명 추출 후 DB 조회
+    - 동명이인 > 1명 → candidates 반환 (409)
+    - 클라이언트가 회원번호 포함 재요청 시 저장
     """
     try:
         if not (hasattr(request, "files") and request.files):
             return {"status": "error", "message": "업로드된 파일이 없습니다.", "http_status": 400}
 
-        # 가장 첫 파일 기준
         file_key = next(iter(request.files.keys()))
         file = request.files[file_key]
 
-        parsed = extract_order_from_uploaded_image(file)
-        if not parsed:
-            return {"status": "error", "message": "업로드된 이미지에서 주문을 추출하지 못했습니다.", "http_status": 400}
+        user_text = request.form.get("text", "").strip()
+        member_name = user_text.split()[0] if user_text else "미지정"
+        member_no = request.form.get("회원번호", "").strip()
 
-        res = handle_product_order(parsed) if callable(handle_product_order) else save_order_to_sheet(parsed)
+        # 1) 이미지 → JSON 파싱
+        parsed = extract_order_from_uploaded_image(file)
+        if not parsed or "orders" not in parsed:
+            return {"status": "error", "message": "이미지에서 주문 추출 실패", "raw": parsed, "http_status": 400}
+
+        # 2) 회원 확인
+      
+        member_info = None
+
+        if member_no:  # ✅ 클라이언트가 회원번호를 직접 지정한 경우
+            matched = get_member_info_by_number(member_no)
+            if not matched:
+                return {"error": f"회원번호 {member_no} 회원을 찾을 수 없습니다.", "http_status": 404}
+            member_info = matched
+        else:  # ✅ 회원명으로 검색
+            matched_members = get_member_info_by_name_list(member_name)
+            if len(matched_members) == 0:
+                return {"error": f"{member_name} 회원을 찾을 수 없습니다.", "http_status": 404}
+            elif len(matched_members) > 1:
+                return {
+                    "error": f"{member_name} 이름으로 여러 명의 회원이 존재합니다. 순번을 선택해 주세요.",
+                    "candidates": matched_members,
+                    "http_status": 409
+                }
+            member_info = matched_members[0]
+
+        # 3) 주문 데이터 병합
+        today = datetime.now().strftime("%Y-%m-%d")
+        enriched_orders = []
+        for o in parsed["orders"]:
+            enriched_orders.append({
+                "주문일자": today,
+                "회원명": member_name,
+                "회원번호": member_info.get("회원번호", ""),
+                "휴대폰번호": member_info.get("휴대폰번호", ""),
+                "제품명": o.get("제품명"),
+                "제품가격": o.get("제품가격"),
+                "PV": o.get("PV"),
+                "결재방법": o.get("결재방법", "카드"),
+                "주문자_고객명": o.get("주문자_고객명"),
+                "주문자_휴대폰번호": o.get("주문자_휴대폰번호"),
+                "배송처": o.get("배송처"),
+                "수령확인": o.get("수령확인", "N"),
+            })
+
+        # 4) 저장 실행
+        results = []
+        for order in enriched_orders:
+            res = handle_product_order(order) if callable(handle_product_order) else save_order_to_sheet(order)
+            results.append(res)
+
         return {
-            "status": "success" if _ok(res) else "error",
+            "status": "success" if all(_ok(r) for r in results) else "error",
             "intent": "order_upload",
-            "parsed": parsed,
-            "http_status": 200 if _ok(res) else 400
+            "parsed": enriched_orders,
+            "http_status": 200 if all(_ok(r) for r in results) else 400,
         }
 
     except Exception as e:
         import traceback; traceback.print_exc()
         return {"status": "error", "message": str(e), "http_status": 500}
+
 
 
 
@@ -258,6 +345,143 @@ if __name__ == "__main__":
     parsed = parse_order_natural_text(order_text)
     import json
     print(json.dumps(parsed, ensure_ascii=False, indent=2))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def addOrders(payload):
+    url_primary = os.getenv("MEMBERSLIST_API_URL", "").strip()
+    url_fallback = url_primary.replace("addOrders", "add_orders") if "addOrders" in url_primary else ""
+    if url_primary:
+        try:
+            resp = requests.post(url_primary, json=payload, timeout=20)
+            resp.raise_for_status()
+            return resp.json()
+        except requests.HTTPError as e:
+            if e.response is not None and e.response.status_code == 404 and url_fallback:
+                resp2 = requests.post(url_fallback, json=payload, timeout=20)
+                resp2.raise_for_status()
+                return resp2.json()
+            return {"ok": False, "error": "API 오류, 시트에 저장됨"}
+        except requests.RequestException:
+            return {"ok": False, "error": "네트워크 오류, 시트에 저장됨"}
+    return {"ok": False, "error": "API 미설정, 시트에 저장됨"}
+
+
+
+
+
+
+# ===================== 주문 처리 함수 =====================
+def order_upload_pc_func():
+    """PC 업로드"""
+    mode = request.form.get("mode") or request.args.get("mode") or "api"
+    member_name = request.form.get("회원명")
+    image_file = request.files.get("image")
+    image_url = request.form.get("image_url")
+    message_text = (request.form.get("message") or "").strip()
+
+    if "제품주문 저장" in message_text and not member_name:
+        member_name = message_text.replace("제품주문 저장", "").strip()
+
+    if not member_name:
+        return {"status": "error", "message": "회원명이 필요합니다.", "http_status": 400}
+
+    try:
+        if image_file:
+            image_bytes = io.BytesIO(image_file.read())
+        elif image_url:
+            resp = requests.get(image_url, timeout=20)
+            if resp.status_code != 200:
+                return {"status": "error", "message": "이미지 다운로드 실패", "http_status": 400}
+            image_bytes = io.BytesIO(resp.content)
+        else:
+            return {"status": "error", "message": "image(파일) 또는 image_url 필요", "http_status": 400}
+
+        orders_list = extract_order_from_uploaded_image(image_bytes)
+        for o in orders_list:
+            o.setdefault("결재방법", ""); o.setdefault("수령확인", ""); o.setdefault("주문일자", process_order_date(""))
+
+        save_result = addOrders({"회원명": member_name, "orders": orders_list})
+        return {"status": "success","mode": mode,"회원명": member_name,"추출된_JSON": orders_list,
+                "저장_결과": save_result,"http_status": 200}
+    except Exception as e:
+        return {"status": "error", "message": str(e), "http_status": 500}
+
+
+
+
+
+
+def order_upload_ipad_func():
+    """iPad 업로드"""
+    mode = request.form.get("mode") or request.args.get("mode") or "api"
+    member_name = request.form.get("회원명")
+    image_file = request.files.get("image")
+    image_url = request.form.get("image_url")
+    message_text = (request.form.get("message") or "").strip()
+    if "제품주문 저장" in message_text and not member_name:
+        member_name = message_text.replace("제품주문 저장", "").strip()
+    if not member_name:
+        return {"status": "error","message": "회원명이 필요합니다.","http_status": 400}
+    try:
+        if image_file:
+            image_bytes = io.BytesIO(image_file.read())
+        elif image_url:
+            resp = requests.get(image_url, timeout=20)
+            if resp.status_code != 200: return {"status": "error","message": "이미지 다운로드 실패","http_status": 400}
+            image_bytes = io.BytesIO(resp.content)
+        else:
+            return {"status": "error","message": "image 또는 image_url 필요","http_status": 400}
+
+        orders_list = extract_order_from_uploaded_image(image_bytes)
+        for o in orders_list:
+            o.setdefault("결재방법", ""); o.setdefault("수령확인", ""); o.setdefault("주문일자", process_order_date(""))
+
+        save_result = addOrders({"회원명": member_name, "orders": orders_list})
+        return {"status": "success","mode": mode,"회원명": member_name,"추출된_JSON": orders_list,
+                "저장_결과": save_result,"http_status": 200}
+    except Exception as e:
+        return {"status": "error","message": str(e),"http_status": 500}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

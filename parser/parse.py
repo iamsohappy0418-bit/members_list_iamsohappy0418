@@ -1530,16 +1530,6 @@ def parse_order_text_rule(text: str) -> dict:
 # service_order
 # ======================================================================================
 
-# ===============================================
-# ✅ 외부 API 연동
-# ===============================================
-def addOrders(payload: dict) -> dict:
-    """
-    외부 MEMBERSLIST API에 주문 JSON을 전송합니다.
-    """
-    resp = requests.post(MEMBERSLIST_API_URL, json=payload)
-    resp.raise_for_status()
-    return resp.json()
 
 
 
