@@ -62,40 +62,6 @@ def _is_structured_order(obj: dict) -> bool:
 
 
 
-def order_auto_func():
-    """
-    주문 허브 (라우트 아님)
-    - 파일 업로드가 있으면 → order_upload_pc_func
-    - query 가 dict이고 '구조화 주문'이면 → save_order_proxy_func
-    - 그 외(문자열/텍스트 dict 등) → order_nl_func
-    """
-    try:
-        q = g.query.get("query") if hasattr(g, "query") and isinstance(g.query, dict) else None
-        # 원본 텍스트 저장 (문자열/딕셔너리 모두 문자열화)
-        raw = _get_text_from_g()
-        if raw:
-            g.query["raw_text"] = raw
-        elif isinstance(q, (dict, str)):
-            g.query["raw_text"] = q if isinstance(q, str) else str(q)
-
-        # 1) 파일 업로드 우선
-        if hasattr(request, "files") and request.files:
-            return order_upload_pc_func()
-
-        # 2) 구조화 JSON → 저장 프록시
-        if isinstance(q, dict) and _is_structured_order(q):
-            return save_order_proxy_func()
-
-        # 3) 자연어 텍스트 → NLU 기반
-        return order_nl_func()
-
-    except Exception as e:
-        import traceback; traceback.print_exc()
-        return {"status": "error", "message": str(e), "http_status": 500}
-
-
-
-
 
 
 
@@ -370,23 +336,21 @@ if __name__ == "__main__":
 
 
 def addOrders(payload):
-    url_primary = os.getenv("MEMBERSLIST_API_URL", "").strip()
-    url_fallback = url_primary.replace("addOrders", "add_orders") if "addOrders" in url_primary else ""
-    if url_primary:
-        try:
-            resp = requests.post(url_primary, json=payload, timeout=20)
-            resp.raise_for_status()
-            return resp.json()
-        except requests.HTTPError as e:
-            if e.response is not None and e.response.status_code == 404 and url_fallback:
-                resp2 = requests.post(url_fallback, json=payload, timeout=20)
-                resp2.raise_for_status()
-                return resp2.json()
-            return {"ok": False, "error": "API 오류, 시트에 저장됨"}
-        except requests.RequestException:
-            return {"ok": False, "error": "네트워크 오류, 시트에 저장됨"}
-    return {"ok": False, "error": "API 미설정, 시트에 저장됨"}
+    url = os.getenv("MEMBERSLIST_API_URL", "").strip()
+    if not url:
+        return {"ok": False, "error": "API 미설정, 시트에 저장됨"}
 
+    try:
+        resp = requests.post(url, json=payload, timeout=20)
+        if resp.status_code == 200:
+            return resp.json()
+        else:
+            return {
+                "ok": False,
+                "error": f"API 응답 오류: {resp.status_code}, body={resp.text}"
+            }
+    except requests.RequestException as e:
+        return {"ok": False, "error": f"네트워크 오류: {str(e)}"}
 
 
 
@@ -425,9 +389,58 @@ def get_member_info_by_name(member_name: str) -> dict:
 
 
 
+
+
+
+
+
+def order_auto_func():
+    """
+    주문 허브 (라우트 아님)
+    - 파일 업로드가 있으면 → order_upload_pc_func
+    - query 가 dict이고 '구조화 주문'이면 → save_order_proxy_func
+    - 그 외(문자열/텍스트 dict 등) → order_nl_func
+    """
+    try:
+        print("📌 [DEBUG] order_auto_func 진입")
+        q = g.query.get("query") if hasattr(g, "query") and isinstance(g.query, dict) else None
+        raw = _get_text_from_g()
+        if raw:
+            g.query["raw_text"] = raw
+        elif isinstance(q, (dict, str)):
+            g.query["raw_text"] = q if isinstance(q, str) else str(q)
+
+        # 1) 파일 업로드 우선
+        if hasattr(request, "files") and request.files:
+            print("📌 [DEBUG] 파일 업로드 감지됨 → order_upload_pc_func 호출")
+            return order_upload_pc_func()
+
+        # 2) 구조화 JSON → 저장 프록시
+        if isinstance(q, dict) and _is_structured_order(q):
+            print("📌 [DEBUG] 구조화 JSON 감지됨 → save_order_proxy_func 호출")
+            return save_order_proxy_func()
+
+        # 3) 자연어 텍스트 → NLU 기반
+        print("📌 [DEBUG] 자연어 주문 처리 → order_nl_func 호출")
+        return order_nl_func()
+
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return {"status": "error", "message": str(e), "http_status": 500}
+
+
+
+
+
+
+
+from parser import handle_order_save 
+
 # ===================== 주문 처리 함수 =====================
 def order_upload_pc_func():
     """PC 업로드"""
+    print("📌 [DEBUG] order_upload_pc_func 호출됨")
+
     mode = request.form.get("mode") or request.args.get("mode") or "api"
     member_name = request.form.get("회원명")
     image_file = request.files.get("image")
@@ -437,14 +450,18 @@ def order_upload_pc_func():
     if "제품주문 저장" in message_text and not member_name:
         member_name = message_text.replace("제품주문 저장", "").strip()
 
+
+    print(f"📌 [DEBUG] member_name={member_name}, message_text={message_text}")
     if not member_name:
         return {"status": "error", "message": "회원명이 필요합니다.", "http_status": 400}
 
     try:
         # 이미지 읽기
         if image_file:
+            print("📌 [DEBUG] 업로드된 파일 사용")
             image_bytes = io.BytesIO(image_file.read())
         elif image_url:
+            print(f"📌 [DEBUG] image_url 사용: {image_url}")
             resp = requests.get(image_url, timeout=20)
             if resp.status_code != 200:
                 return {"status": "error", "message": "이미지 다운로드 실패", "http_status": 400}
@@ -453,7 +470,12 @@ def order_upload_pc_func():
             return {"status": "error", "message": "image(파일) 또는 image_url 필요", "http_status": 400}
 
         # 이미지에서 주문 정보 추출
+        print("📌 [DEBUG] extract_order_from_uploaded_image 호출 시작")
         result = extract_order_from_uploaded_image(image_bytes)
+        print(f"📌 [DEBUG] extract_order_from_uploaded_image 결과: {result}")
+
+
+
         if "error" in result:
             return {"status": "error", "message": result["error"], "http_status": 400}
 
@@ -461,6 +483,8 @@ def order_upload_pc_func():
 
         # ✅ DB 시트에서 회원번호, 휴대폰번호 가져오기
         member_info = get_member_info_by_name(member_name)
+        print(f"📌 [DEBUG] member_info={member_info}")
+
         member_number = member_info.get("회원번호", "")
         member_phone = member_info.get("휴대폰번호", "")
 
@@ -501,19 +525,27 @@ def order_upload_pc_func():
         print(json.dumps(payload, ensure_ascii=False, indent=2))
 
         # 시트 저장 호출
-        save_result = addOrders(payload)
+        save_results = []
+        for order in orders_list:
+            res = handle_order_save(order)
+            save_results.append(res)
+
+        print(f"📌 [DEBUG] handle_order_save 결과: {save_results}")
+
+
+
+
 
         return {
             "status": "success",
             "mode": mode,
             "회원명": member_name,
             "추출된_JSON": orders_list,
-            "저장_결과": save_result,
+            "저장_결과": save_results,
             "http_status": 200
         }
     except Exception as e:
         return {"status": "error", "message": str(e), "http_status": 500}
-
 
 
 

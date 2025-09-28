@@ -167,6 +167,8 @@ PROMPT_VERSION = os.getenv("PROMPT_VERSION")
 # --------------------------------------------------
 MEMBERSLIST_API_URL = os.getenv("MEMBERSLIST_API_URL")
 
+print("✅ OPENAI_API_KEY 세팅됨:", bool(OPENAI_API_KEY))
+print("✅ OPENAI_API_URL:", OPENAI_API_URL)
 
 
 

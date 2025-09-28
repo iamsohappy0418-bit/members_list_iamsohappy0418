@@ -1232,10 +1232,23 @@ def run_intent_func(func, query=None, options=None, **extra_kwargs):
 def extract_order_from_uploaded_image(image_bytes):
     """
     주문서 이미지에서 JSON 구조의 주문 데이터를 추출합니다.
-    - 입력: BytesIO 이미지
-    - 출력: { "orders": [...] } 또는 {"error": ..., "raw_text": ...}
     """
+    import os
+    print("📌 [DEBUG] extract_order_from_uploaded_image 함수 호출됨")  # ✅ 디버깅 로그 추가
+
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+    OPENAI_API_URL = os.getenv("OPENAI_API_URL")
+
+    print(f"📌 [DEBUG] OPENAI_API_KEY 설정됨? {bool(OPENAI_API_KEY)}")
+    print(f"📌 [DEBUG] OPENAI_API_URL: {OPENAI_API_URL}")
+
+    if not OPENAI_API_KEY or not OPENAI_API_URL:
+        return {
+            "error": "❌ OPENAI_API_KEY 또는 OPENAI_API_URL 환경변수가 설정되지 않았습니다."
+        }
+
     image_base64 = base64.b64encode(image_bytes.getvalue()).decode("utf-8")
+    print(f"📌 [DEBUG] base64 변환 완료, 길이={len(image_base64)}")
 
     headers = {
         "Authorization": f"Bearer {OPENAI_API_KEY}",
@@ -1268,26 +1281,30 @@ def extract_order_from_uploaded_image(image_bytes):
     }
 
     try:
+        print(f"📌 [DEBUG] OpenAI API 호출 시작 → {OPENAI_API_URL}")
         response = requests.post(OPENAI_API_URL, headers=headers, json=payload)
+        print(f"📌 [DEBUG] 응답 코드: {response.status_code}")
         response.raise_for_status()
         result_text = response.json()["choices"][0]["message"]["content"]
+        print(f"📌 [DEBUG] 응답 내용: {result_text[:200]}...")  # 앞 200자만 출력
     except Exception as e:
+        print(f"❌ [DEBUG] OpenAI API 호출 실패: {str(e)}")
         return {"error": f"OpenAI API 호출 실패: {str(e)}"}
 
-    # ✅ 코드블록 전체 제거
+    # ✅ 코드블록 제거
     clean_text = re.sub(r"```(?:json)?(.*?)```", r"\1", result_text, flags=re.DOTALL).strip()
+    print(f"📌 [DEBUG] 코드블록 제거 후 텍스트: {clean_text[:200]}...")
 
     try:
         order_data = json.loads(clean_text)
         if not isinstance(order_data, dict) or "orders" not in order_data:
+            print("❌ [DEBUG] orders 필드 없음")
             return {"error": "orders 필드가 없습니다", "raw_text": result_text}
+        print("✅ [DEBUG] JSON 파싱 성공")
         return order_data
     except json.JSONDecodeError:
+        print("❌ [DEBUG] JSON 파싱 실패")
         return {"error": "JSON 파싱 실패", "raw_text": result_text}
-
-    
-
-
 
 
 
