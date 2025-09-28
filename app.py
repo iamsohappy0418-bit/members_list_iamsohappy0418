@@ -730,8 +730,8 @@ def nlu_to_pc_input(text: str) -> dict:
         if any(word in order_text for word in ["등록", "추가", "저장"]):
             m = re.search(r"([가-힣]{2,4}).*(제품)?주문", order_text)
             if m:
-                return {"intent": "order_upload_func", "query": {"회원명": m.group(1)}}
-            return {"intent": "order_upload_func", "query": {"raw_text": text}}
+                return {"intent": "order_upload_pc_func", "query": {"회원명": m.group(1)}}
+            return {"intent": "order_upload_pc_func", "query": {"raw_text": text}}
 
         # 수정/변경/업데이트
         if any(word in order_text for word in ["수정", "변경", "업데이트"]):
@@ -1054,8 +1054,10 @@ def order_route():
         # 0) 파일 업로드 우선 처리 (multipart/form-data)
         if hasattr(request, "files") and request.files:
             if not hasattr(g, "query") or not isinstance(g.query, dict):
-                g.query = {"intent": "order_upload", "query": {}}
-            result = ORDER_INTENTS.get("order_upload", order_upload_func)()
+                g.query = {"intent": "order_upload_pc", "query": {}}
+            result = ORDER_INTENTS.get("order_upload_pc", order_upload_pc_func)()
+
+
             if isinstance(result, dict):
                 return jsonify(result), result.get("http_status", 200)
             if isinstance(result, list):

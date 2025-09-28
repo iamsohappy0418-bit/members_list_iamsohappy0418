@@ -10,7 +10,7 @@ from parser.parse import handle_product_order, save_order_to_sheet
 import os, re, io, json, base64, requests, traceback
 from flask import jsonify
 from datetime import datetime
-
+from utils import get_rows_from_sheet
 
 
 def _norm(s): 
@@ -65,7 +65,7 @@ def _is_structured_order(obj: dict) -> bool:
 def order_auto_func():
     """
     주문 허브 (라우트 아님)
-    - 파일 업로드가 있으면 → order_upload_func
+    - 파일 업로드가 있으면 → order_upload_pc_func
     - query 가 dict이고 '구조화 주문'이면 → save_order_proxy_func
     - 그 외(문자열/텍스트 dict 등) → order_nl_func
     """
@@ -80,7 +80,7 @@ def order_auto_func():
 
         # 1) 파일 업로드 우선
         if hasattr(request, "files") and request.files:
-            return order_upload_func()
+            return order_upload_pc_func()
 
         # 2) 구조화 JSON → 저장 프록시
         if isinstance(q, dict) and _is_structured_order(q):
@@ -369,7 +369,7 @@ if __name__ == "__main__":
 
 
 
-def addOrders(payload):
+def add_orders(payload):
     url_primary = os.getenv("MEMBERSLIST_API_URL", "").strip()
     url_fallback = url_primary.replace("addOrders", "add_orders") if "addOrders" in url_primary else ""
     if url_primary:
@@ -392,6 +392,39 @@ def addOrders(payload):
 
 
 
+
+
+
+def get_member_info_by_name(member_name: str) -> dict:
+    """
+    DB 시트에서 회원명을 기준으로 회원번호와 휴대폰번호를 가져옵니다.
+    - 회원명이 여러 개 매칭되면 첫 번째만 반환
+    - 찾지 못하면 빈 dict 반환
+    """
+    if not member_name:
+        return {}
+
+    try:
+        rows = get_rows_from_sheet("DB")  # DB 시트 전체 가져오기
+        for row in rows:
+            if str(row.get("회원명", "")).strip() == member_name.strip():
+                return {
+                    "회원명": row.get("회원명", ""),
+                    "회원번호": row.get("회원번호", ""),
+                    "휴대폰번호": row.get("휴대폰번호", "")
+                }
+    except Exception as e:
+        print(f"[get_member_info_by_name] 에러: {e}")
+
+    return {}
+
+
+
+
+
+
+
+
 # ===================== 주문 처리 함수 =====================
 def order_upload_pc_func():
     """PC 업로드"""
@@ -408,6 +441,7 @@ def order_upload_pc_func():
         return {"status": "error", "message": "회원명이 필요합니다.", "http_status": 400}
 
     try:
+        # 이미지 읽기
         if image_file:
             image_bytes = io.BytesIO(image_file.read())
         elif image_url:
@@ -418,15 +452,70 @@ def order_upload_pc_func():
         else:
             return {"status": "error", "message": "image(파일) 또는 image_url 필요", "http_status": 400}
 
-        orders_list = extract_order_from_uploaded_image(image_bytes)
-        for o in orders_list:
-            o.setdefault("결재방법", ""); o.setdefault("수령확인", ""); o.setdefault("주문일자", process_order_date(""))
+        # 이미지에서 주문 정보 추출
+        result = extract_order_from_uploaded_image(image_bytes)
+        if "error" in result:
+            return {"status": "error", "message": result["error"], "http_status": 400}
 
-        save_result = addOrders({"회원명": member_name, "orders": orders_list})
-        return {"status": "success","mode": mode,"회원명": member_name,"추출된_JSON": orders_list,
-                "저장_결과": save_result,"http_status": 200}
+        orders_list = result.get("orders", [])
+
+        # ✅ DB 시트에서 회원번호, 휴대폰번호 가져오기
+        member_info = get_member_info_by_name(member_name)
+        member_number = member_info.get("회원번호", "")
+        member_phone = member_info.get("휴대폰번호", "")
+
+        # ✅ 시트 컬럼에 맞게 보정
+        fixed_orders = []
+        for o in orders_list:
+            if not isinstance(o, dict):
+                o = {"raw_text": str(o)}
+
+            # 숫자만 추출 (제품가격, PV)
+            if "제품가격" in o:
+                o["제품가격"] = re.sub(r"[^0-9]", "", o["제품가격"])
+            if "PV" in o:
+                o["PV"] = re.sub(r"[^0-9]", "", o["PV"])
+
+            # 회원 정보 보강
+            o.setdefault("회원명", member_name)
+            o.setdefault("회원번호", member_number)
+            o.setdefault("휴대폰번호", member_phone)
+
+            # 기본값 채우기
+            o.setdefault("주문일자", process_order_date(""))
+            o.setdefault("결재방법", "")
+            o.setdefault("수령확인", "N")
+            o.setdefault("주문자_고객명", "")
+            o.setdefault("주문자_휴대폰번호", "")
+            o.setdefault("배송처", "")
+
+            fixed_orders.append(o)
+
+        orders_list = fixed_orders
+
+        # 최종 payload
+        payload = {"회원명": member_name, "orders": orders_list}
+
+        # 📌 로그 찍기
+        print("==== addOrders 호출 직전 payload ====")
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+
+        # 시트 저장 호출
+        save_result = addOrders(payload)
+
+        return {
+            "status": "success",
+            "mode": mode,
+            "회원명": member_name,
+            "추출된_JSON": orders_list,
+            "저장_결과": save_result,
+            "http_status": 200
+        }
     except Exception as e:
         return {"status": "error", "message": str(e), "http_status": 500}
+
+
+
 
 
 
