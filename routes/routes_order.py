@@ -369,7 +369,7 @@ if __name__ == "__main__":
 
 
 
-def add_orders(payload):
+def addOrders(payload):
     url_primary = os.getenv("MEMBERSLIST_API_URL", "").strip()
     url_fallback = url_primary.replace("addOrders", "add_orders") if "addOrders" in url_primary else ""
     if url_primary:
