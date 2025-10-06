@@ -956,9 +956,12 @@ def update_member_func(data: dict = None):
             if "query" in data and isinstance(data["query"], dict):
                 query.update(data["query"])   # ✅ 중첩 query 병합
 
-        raw_text = query.get("raw_text") or query.get("요청문")
-        if isinstance(raw_text, dict):
-            raw_text = ""
+
+        # ✅ raw_text 초기화 및 타입 보정
+        raw_text = query.get("raw_text") or query.get("요청문") or ""
+        if not isinstance(raw_text, str):
+            raw_text = str(raw_text or "")   # ✅ dict/None 방지용
+        print(f"[DEBUG] raw_text type={type(raw_text)}, value={raw_text}")
 
         member_name = query.get("회원명")
 
