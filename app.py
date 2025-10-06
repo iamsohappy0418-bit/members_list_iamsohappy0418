@@ -933,7 +933,20 @@ def member_route():
         else:
             result = func()
 
-    return jsonify(result), result.get("http_status", 200)
+
+
+        # ✅ 결과 None 방지 (Flask 안전 반환)
+        if not result:
+            return jsonify({
+                "status": "error",
+                "message": f"❌ {intent or 'unknown'} intent 처리 결과가 비어 있습니다.",
+                "http_status": 500
+            }), 500
+
+        return jsonify(result), result.get("http_status", 200)
+
+
+
 
 
 
@@ -1186,6 +1199,7 @@ def commission_route():
 
 
 
+# 잘 작동함
 
 
 
