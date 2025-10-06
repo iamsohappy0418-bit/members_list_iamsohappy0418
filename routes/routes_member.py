@@ -966,6 +966,8 @@ def update_member_func(data: dict = None):
         member_name = query.get("회원명")
 
 
+        if not raw_text.strip():
+            return {"status": "error", "message": "❌ 요청문이 비어 있습니다.", "http_status": 400}
 
 
         # ✅ raw_text에서 회원명 추출 시도
