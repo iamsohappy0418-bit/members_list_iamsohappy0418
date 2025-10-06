@@ -50,7 +50,7 @@ from service import (
     process_member_query,
 
     # 주문
-    handle_order_save, handle_product_order,
+    handle_order_save, 
     find_order, register_order, update_order,
     delete_order, delete_order_by_row, clean_order_data,
     save_order_to_sheet,
@@ -1180,10 +1180,7 @@ def commission_route():
         }), 500
 
 
-
-# 잘 정리 했음
-# 동작함
-# 동작우선 
+# 잘
 
 
 
