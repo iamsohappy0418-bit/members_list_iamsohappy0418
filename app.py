@@ -1194,6 +1194,10 @@ def commission_route():
 
 
 
+@app.route("/routes", methods=["GET"])
+def show_routes():
+    """현재 등록된 모든 Flask 라우트 확인"""
+    return {"routes": [str(rule) for rule in app.url_map.iter_rules()]}
 
 
 
